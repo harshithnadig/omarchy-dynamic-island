@@ -24,8 +24,11 @@ Panel {
   property string mediaArtist: "Play Spotify, YouTube or VLC"
   property string mediaStatus: "Stopped"
   property string artUrl: ""
-  property int batteryPct: 80
-  property string batteryStatus: "Discharging"
+  property int batteryPct: -1
+  property string batteryStatus: "Unavailable"
+  property bool batteryAvailable: false
+  property bool antigravityAvailable: false
+  property bool claudeAvailable: false
 
   readonly property color fg: bar ? bar.foreground : Color.popups.text
   readonly property color bg: Color.popups.background
@@ -62,6 +65,13 @@ Panel {
     actionProc.running = true
   }
 
+  function agentSummary() {
+    var names = []
+    if (root.antigravityAvailable) names.push("Antigravity")
+    if (root.claudeAvailable) names.push("Claude Code")
+    return names.length > 0 ? names.join(" · ") + " available" : "No supported local agent detected"
+  }
+
   Process {
     id: stateProc
     running: false
@@ -78,8 +88,13 @@ Panel {
             root.artUrl = data.media.art_url || ""
           }
           if (data.battery) {
-            root.batteryPct = data.battery.pct || 100
-            root.batteryStatus = data.battery.status || ""
+            root.batteryAvailable = data.battery.available === true
+            root.batteryPct = data.battery.pct !== null && data.battery.pct !== undefined ? data.battery.pct : -1
+            root.batteryStatus = data.battery.status || "Unavailable"
+          }
+          if (data.agents) {
+            root.antigravityAvailable = data.agents.antigravity && data.agents.antigravity.available === true
+            root.claudeAvailable = data.agents.claude_code && data.agents.claude_code.available === true
           }
         } catch(e) {}
       }
@@ -264,8 +279,8 @@ Panel {
           width: parent.width
           height: Style.space(60)
           radius: Style.space(10)
-          color: Qt.rgba(0.2, 0.6, 1.0, 0.12)
-          border.color: Qt.rgba(0.2, 0.6, 1.0, 0.3)
+          color: root.antigravityAvailable || root.claudeAvailable ? Qt.rgba(0.2, 0.6, 1.0, 0.12) : Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.06)
+          border.color: root.antigravityAvailable || root.claudeAvailable ? Qt.rgba(0.2, 0.6, 1.0, 0.3) : Qt.rgba(1.0, 1.0, 1.0, 0.12)
           border.width: 1
 
           RowLayout {
@@ -285,7 +300,7 @@ Panel {
 
               Text {
                 textFormat: Text.PlainText
-                text: "AI Agent Sentinel (Active)"
+                text: root.antigravityAvailable || root.claudeAvailable ? "AI Agent Sentinel" : "AI Agent Sentinel (not detected)"
                 font.family: root.fontFam
                 font.pixelSize: Style.font.caption
                 font.bold: true
@@ -294,7 +309,7 @@ Panel {
 
               Text {
                 textFormat: Text.PlainText
-                text: "Google Antigravity & Claude Code linked"
+                text: root.agentSummary()
                 font.family: root.fontFam
                 font.pixelSize: Style.font.caption
                 color: Qt.darker(root.fg, 1.4)
@@ -305,16 +320,16 @@ Panel {
               width: Style.space(56)
               height: Style.space(24)
               radius: Style.space(4)
-              color: "#38ef7d"
+              color: root.antigravityAvailable || root.claudeAvailable ? "#38ef7d" : Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.15)
 
               Text {
                 anchors.centerIn: parent
                 textFormat: Text.PlainText
-                text: "Online"
+                text: root.antigravityAvailable || root.claudeAvailable ? "Detected" : "Offline"
                 font.family: root.fontFam
                 font.pixelSize: Style.font.caption
                 font.bold: true
-                color: "#000000"
+                color: root.antigravityAvailable || root.claudeAvailable ? "#000000" : root.fg
               }
             }
           }
@@ -339,7 +354,7 @@ Panel {
               Text { textFormat: Text.PlainText; text: "🔋"; font.pixelSize: Style.font.body }
               Text {
                 textFormat: Text.PlainText
-                text: "Battery: " + root.batteryPct + "%"
+                text: root.batteryAvailable && root.batteryPct >= 0 ? "Battery: " + root.batteryPct + "%" : "Battery unavailable"
                 font.family: root.fontFam
                 font.pixelSize: Style.font.caption
                 font.bold: true
@@ -354,7 +369,7 @@ Panel {
               text: root.batteryStatus
               font.family: root.fontFam
               font.pixelSize: Style.font.caption
-              color: "#38ef7d"
+              color: root.batteryAvailable ? "#38ef7d" : Qt.darker(root.fg, 1.3)
             }
           }
         }

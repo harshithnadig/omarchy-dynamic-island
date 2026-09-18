@@ -16,8 +16,8 @@ BarWidget {
   property string mediaTitle: ""
   property string mediaArtist: ""
   property string mediaStatus: "Stopped"
-  property int batteryPct: 80
-  property string batteryStatus: "Discharging"
+  property int batteryPct: -1
+  property string batteryStatus: "Unavailable"
 
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
 
@@ -60,8 +60,8 @@ BarWidget {
             root.mediaArtist = data.media.artist || ""
           }
           if (data.battery) {
-            root.batteryPct = data.battery.pct || 100
-            root.batteryStatus = data.battery.status || ""
+            root.batteryPct = data.battery.pct !== null && data.battery.pct !== undefined ? data.battery.pct : -1
+            root.batteryStatus = data.battery.status || "Unavailable"
           }
         } catch(e) {}
       }

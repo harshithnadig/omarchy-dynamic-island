@@ -24,11 +24,14 @@ Use the Omarchy bar editor to place the widget if necessary. Installation fetche
 
 ### Permissions and persistent state
 
-Reads media metadata and battery state. Media buttons invoke playerctl on explicit clicks. Album art may load a URL supplied by the media player. Does not install or modify agent configuration.
+Reads media metadata and battery state. Media buttons invoke playerctl on explicit clicks. Album-art URLs, when supplied by a media player, remain optional metadata. The agent tile only reports whether `agy` or `claude` is discoverable; it does not execute or modify agent configuration.
 
 ### Current limitations
 
-Waveform animation is decorative, not measured audio levels. The current backend supplies media and battery data, not an implemented AI permission-card bridge. Battery fallback values may appear without a supported battery.
+Waveform animation is decorative, not measured audio levels. The agent tile
+reports executable availability, not session health or permission state. When
+no supported battery is present, the panel shows unavailable rather than a
+synthetic percentage.
 
 Repository structure and documentation were reviewed for resubmission. This is not a fresh end-to-end runtime test or security audit.
 

@@ -3,9 +3,9 @@
   "id": "harshith.dynamic-island",
   "name": "Dynamic Island Pro",
   "version": "1.0.0",
-  "author": "Harshith Nadig",
+  "author": "Dynamic Island Contributors",
   "license": "MIT",
-  "description": "macOS-style Liquid Glass Dynamic Island for Omarchy: fluid spring morphing, dancing audio visualizer, album art, live media controls, and AI agent permission cards.",
+  "description": "macOS-style Liquid Glass Dynamic Island for Omarchy: fluid spring morphing, media metadata and controls, battery telemetry, and optional local-agent availability.",
   "kinds": [
     "bar-widget"
   ],
