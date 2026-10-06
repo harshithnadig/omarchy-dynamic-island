@@ -2,20 +2,31 @@
 set -euo pipefail
 # Dynamic Island Telemetry & Media Backend
 
+playerctl_call() {
+  command -v playerctl >/dev/null 2>&1 || return 127
+  timeout 1s playerctl "$@"
+}
+
 get_state() {
   local playing=false
   local title=""
   local artist=""
   local art_url=""
+  local position="null"
+  local duration="null"
   local status="Stopped"
 
   if command -v playerctl &>/dev/null; then
-    status=$(playerctl status 2>/dev/null || echo "Stopped")
+    status=$(playerctl_call status 2>/dev/null || echo "Stopped")
     if [[ "$status" == "Playing" || "$status" == "Paused" ]]; then
       playing=true
-      title=$(playerctl metadata --format '{{title}}' 2>/dev/null || echo "")
-      artist=$(playerctl metadata --format '{{artist}}' 2>/dev/null || echo "")
-      art_url=$(playerctl metadata --format '{{mpris:artUrl}}' 2>/dev/null || echo "")
+      title=$(playerctl_call metadata --format '{{title}}' 2>/dev/null || echo "")
+      artist=$(playerctl_call metadata --format '{{artist}}' 2>/dev/null || echo "")
+      art_url=$(playerctl_call metadata --format '{{mpris:artUrl}}' 2>/dev/null || echo "")
+      position=$(playerctl_call position 2>/dev/null || echo "")
+      duration=$(playerctl_call metadata mpris:length 2>/dev/null || echo "")
+      if [[ "$position" =~ ^[0-9]+([.][0-9]+)?$ ]]; then position=$(awk -v p="$position" 'BEGIN { printf "%d", p }'); else position="null"; fi
+      if [[ "$duration" =~ ^[0-9]+$ ]]; then duration=$((duration / 1000000)); else duration="null"; fi
     fi
   fi
 
@@ -24,24 +35,24 @@ get_state() {
   local battery_available=false
   local battery_total=0
   local battery_count=0
-  local battery_status_file battery_dir capacity status
+  local battery_status_file battery_dir capacity battery_state
   for battery_status_file in /sys/class/power_supply/BAT*/status; do
     [[ -f "$battery_status_file" ]] || continue
     battery_dir=${battery_status_file%/status}
     capacity=$(cat "$battery_dir/capacity" 2>/dev/null || true)
-    status=$(cat "$battery_status_file" 2>/dev/null || true)
+    battery_state=$(cat "$battery_status_file" 2>/dev/null || true)
     [[ "$capacity" =~ ^[0-9]+$ ]] || continue
     (( capacity > 100 )) && capacity=100
     battery_total=$((battery_total + capacity))
     battery_count=$((battery_count + 1))
-    if [[ "$status" == "Charging" ]]; then
+    if [[ "$battery_state" == "Charging" ]]; then
       bat_status="Charging"
-    elif [[ "$status" == "Discharging" && "$bat_status" != "Charging" ]]; then
+    elif [[ "$battery_state" == "Discharging" && "$bat_status" != "Charging" ]]; then
       bat_status="Discharging"
-    elif [[ "$status" == "Full" && "$bat_status" == "Unavailable" ]]; then
+    elif [[ "$battery_state" == "Full" && "$bat_status" == "Unavailable" ]]; then
       bat_status="Full"
-    elif [[ "$bat_status" == "Unavailable" && -n "$status" ]]; then
-      bat_status="$status"
+    elif [[ "$bat_status" == "Unavailable" && -n "$battery_state" ]]; then
+      bat_status="$battery_state"
     fi
   done
   if (( battery_count > 0 )); then
@@ -60,6 +71,8 @@ get_state() {
     --arg title "$title" \
     --arg artist "$artist" \
     --arg art_url "$art_url" \
+    --argjson position "$position" \
+    --argjson duration "$duration" \
     --arg bat_status "$bat_status" \
     --argjson bat_pct "$bat_pct" \
     --argjson battery_available "$battery_available" \
@@ -71,7 +84,9 @@ get_state() {
         status: $status,
         title: $title,
         artist: $artist,
-        art_url: $art_url
+        art_url: $art_url,
+        position: $position,
+        duration: $duration
       },
       battery: {
         available: $battery_available,
@@ -88,15 +103,20 @@ get_state() {
 cmd="${1:-get}"
 case "$cmd" in
   play-pause)
-    playerctl play-pause 2>/dev/null || true
+    playerctl_call play-pause 2>/dev/null || true
     get_state
     ;;
   next)
-    playerctl next 2>/dev/null || true
+    playerctl_call next 2>/dev/null || true
     get_state
     ;;
   previous)
-    playerctl previous 2>/dev/null || true
+    playerctl_call previous 2>/dev/null || true
+    get_state
+    ;;
+  seek)
+    target="${2:-}"
+    if [[ "$target" =~ ^[0-9]+$ ]]; then playerctl_call position "$target" 2>/dev/null || true; fi
     get_state
     ;;
   *)

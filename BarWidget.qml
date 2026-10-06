@@ -35,6 +35,7 @@ BarWidget {
   function togglePanel() { if (panelLoader.item) panelLoader.item.toggle() }
 
   function refresh() {
+    if (stateProc.running) return
     stateProc.command = ["bash", scriptPath, "get"]
     stateProc.running = true
   }
@@ -160,7 +161,7 @@ BarWidget {
         visible: root.isPlaying
         spacing: 2
         height: Style.space(12)
-        anchors.verticalCenter: parent.verticalCenter
+        Layout.alignment: Qt.AlignVCenter
 
         Repeater {
           model: 4

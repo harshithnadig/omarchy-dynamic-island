@@ -24,6 +24,20 @@ Panel {
   property string mediaArtist: "Play Spotify, YouTube or VLC"
   property string mediaStatus: "Stopped"
   property string artUrl: ""
+  property int mediaPosition: 0
+  property int mediaDuration: 0
+  property bool draggingSeek: false
+
+  function timeLabel(seconds) {
+    var value = Math.max(0, Math.floor(seconds))
+    var minutes = Math.floor(value / 60)
+    var remaining = value % 60
+    return minutes + ":" + (remaining < 10 ? "0" : "") + remaining
+  }
+
+  function seekTo(seconds) {
+    root.mediaAction("seek", Math.max(0, Math.min(root.mediaDuration, Math.floor(seconds))))
+  }
   property int batteryPct: -1
   property string batteryStatus: "Unavailable"
   property bool batteryAvailable: false
@@ -56,12 +70,14 @@ Panel {
   }
 
   function refresh() {
+    if (stateProc.running) return
     stateProc.command = ["bash", scriptPath, "get"]
     stateProc.running = true
   }
 
-  function mediaAction(action) {
-    actionProc.command = ["bash", scriptPath, action]
+  function mediaAction(action, argument) {
+    if (actionProc.running) return
+    actionProc.command = argument === undefined ? ["bash", scriptPath, action] : ["bash", scriptPath, action, String(argument)]
     actionProc.running = true
   }
 
@@ -86,6 +102,8 @@ Panel {
             root.mediaTitle = data.media.title || "No Media Playing"
             root.mediaArtist = data.media.artist || "Play Spotify, YouTube or VLC"
             root.artUrl = data.media.art_url || ""
+            root.mediaDuration = Number(data.media.duration) || 0
+            if (!root.draggingSeek) root.mediaPosition = Number(data.media.position) || 0
           }
           if (data.battery) {
             root.batteryAvailable = data.battery.available === true
@@ -105,6 +123,13 @@ Panel {
     id: actionProc
     running: false
     onExited: root.refresh()
+  }
+
+  Timer {
+    interval: 1500
+    running: root.opened && root.mediaDuration > 0
+    repeat: true
+    onTriggered: root.refresh()
   }
 
   KeyboardPanel {
@@ -143,7 +168,7 @@ Panel {
         // Glassmorphism Hero Media Card
         Rectangle {
           width: parent.width
-          height: Style.space(110)
+          height: Style.space(144)
           radius: Style.space(12)
           color: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.07)
           border.color: Qt.rgba(1.0, 1.0, 1.0, 0.12)
@@ -162,9 +187,22 @@ Panel {
               color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
               border.color: root.accent
               border.width: 1.5
+              clip: true
+
+              Image {
+                id: localAlbumArt
+                anchors.fill: parent
+                anchors.margins: Style.space(2)
+                visible: root.isPlaying && root.artUrl.startsWith("file://")
+                source: visible ? root.artUrl : ""
+                sourceSize: Qt.size(256, 256)
+                fillMode: Image.PreserveAspectCrop
+                asynchronous: true
+              }
 
               Text {
                 anchors.centerIn: parent
+                visible: localAlbumArt.status !== Image.Ready
                 textFormat: Text.PlainText
                 text: root.isPlaying ? "💿" : "󰝚"
                 font.pixelSize: Style.space(28)
@@ -202,6 +240,39 @@ Panel {
                 font.pixelSize: Style.font.caption
                 elide: Text.ElideRight
                 color: Qt.darker(root.fg, 1.4)
+              }
+
+              RowLayout {
+                Layout.fillWidth: true
+                spacing: Style.space(6)
+
+                Text {
+                  text: root.timeLabel(seekSlider.pressed ? seekSlider.value : root.mediaPosition)
+                  color: root.fg
+                  font.family: root.fontFam
+                  font.pixelSize: Style.font.caption
+                }
+
+                Slider {
+                  id: seekSlider
+                  Layout.fillWidth: true
+                  from: 0
+                  to: Math.max(1, root.mediaDuration)
+                  value: root.mediaPosition
+                  enabled: root.mediaDuration > 0
+                  onMoved: root.mediaPosition = value
+                  onPressedChanged: {
+                    root.draggingSeek = pressed
+                    if (!pressed && root.mediaDuration > 0) root.seekTo(value)
+                  }
+                }
+
+                Text {
+                  text: root.mediaDuration > 0 ? root.timeLabel(root.mediaDuration) : "--:--"
+                  color: root.fg
+                  font.family: root.fontFam
+                  font.pixelSize: Style.font.caption
+                }
               }
 
               // Media Control Buttons
