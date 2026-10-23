@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Dynamic Island Pro Backend: Telemetry, Media, Audio, Display, Agents & Shelf
+# Dynamic Island Pro Backend: Telemetry, Media, Hardware, Audio, Display, Agents & Shelf
 
 playerctl_call() {
   command -v playerctl >/dev/null 2>&1 || return 127
@@ -56,6 +56,62 @@ get_clipboard_info() {
     --arg text "$clip_text" \
     --arg img "$clip_img" \
     '{ type: $type, text: $text, image_path: $img }'
+}
+
+get_hardware_info() {
+  local cpu_pct ram_used=0 ram_total=0 ram_pct=0 swap_used=0 swap_total=0 swap_pct=0
+  local gpu_name="None" gpu_vram_used=0 gpu_vram_total=0 gpu_temp=0
+
+  cpu_pct=$(top -bn1 | grep '%Cpu' | awk '{printf "%.0f", $2}' 2>/dev/null || echo 0)
+
+  if command -v free >/dev/null 2>&1; then
+    read -r ram_used ram_total ram_pct < <(free -m 2>/dev/null | awk '/Mem:/ {printf "%d %d %.0f\n", $3, $2, ($2>0?($3/$2)*100:0)}')
+    read -r swap_used swap_total swap_pct < <(free -m 2>/dev/null | awk '/Swap:/ {printf "%d %d %.0f\n", $3, $2, ($2>0?($3/$2)*100:0)}')
+  fi
+
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    local gpu_raw
+    gpu_raw=$(nvidia-smi --query-gpu=name,memory.used,memory.total,temperature.gpu --format=csv,noheader,nounits 2>/dev/null || echo "None,0,0,0")
+    IFS=',' read -r g_name g_used g_total g_temp <<< "$gpu_raw"
+    gpu_name=$(echo "${g_name:-None}" | xargs)
+    gpu_vram_used=$(echo "${g_used:-0}" | xargs)
+    gpu_vram_total=$(echo "${g_total:-0}" | xargs)
+    gpu_temp=$(echo "${g_temp:-0}" | xargs)
+  fi
+
+  jq -n \
+    --argjson cpu "$cpu_pct" \
+    --argjson ram_used "$ram_used" \
+    --argjson ram_total "$ram_total" \
+    --argjson ram_pct "$ram_pct" \
+    --argjson swap_used "$swap_used" \
+    --argjson swap_total "$swap_total" \
+    --argjson swap_pct "$swap_pct" \
+    --arg gpu_name "$gpu_name" \
+    --argjson gpu_used "$gpu_vram_used" \
+    --argjson gpu_total "$gpu_vram_total" \
+    --argjson gpu_temp "$gpu_temp" \
+    '{
+      cpu: { pct: $cpu },
+      ram: { used_mb: $ram_used, total_mb: $ram_total, pct: $ram_pct },
+      swap: { used_mb: $swap_used, total_mb: $swap_total, pct: $swap_pct },
+      gpu: { name: $gpu_name, used_mb: $gpu_used, total_mb: $gpu_total, temp_c: $gpu_temp }
+    }'
+}
+
+get_recent_screenshots() {
+  local dir="$HOME/Pictures/Screenshots"
+  if [[ ! -d "$dir" ]]; then
+    echo "[]"
+    return
+  fi
+  python3 -c '
+import glob, os, json
+dir = os.path.expanduser("~/Pictures/Screenshots")
+shots = sorted(glob.glob(os.path.join(dir, "*.png")), key=os.path.getmtime, reverse=True)[:4]
+result = [{"path": s, "name": os.path.basename(s)} for s in shots]
+print(json.dumps(result))
+' 2>/dev/null || echo "[]"
 }
 
 get_state() {
@@ -167,9 +223,11 @@ get_state() {
     fi
   fi
 
-  # Clipboard Telemetry
-  local clip_json
+  # Clipboard & Hardware & Screenshots Telemetry
+  local clip_json hw_json shots_json
   clip_json=$(get_clipboard_info)
+  hw_json=$(get_hardware_info)
+  shots_json=$(get_recent_screenshots)
 
   jq -n \
     --arg playing "$playing" \
@@ -198,6 +256,8 @@ get_state() {
     --argjson local_models_list "$local_models_list" \
     --argjson recording_active "$screen_recording_active" \
     --argjson clipboard "$clip_json" \
+    --argjson hardware "$hw_json" \
+    --argjson screenshots "$shots_json" \
     '{
       media: {
         playing: ($playing == "true"),
@@ -227,6 +287,8 @@ get_state() {
       recording: {
         active: $recording_active
       },
+      hardware: $hardware,
+      screenshots: $screenshots,
       agents: {
         antigravity: {
           available: $antigravity_available,
@@ -304,6 +366,14 @@ case "$cmd" in
       omarchy toggle idle >/dev/null 2>&1 || true
     fi
     get_state false
+    ;;
+  optimize-memory)
+    sync
+    echo '{"optimized": true}'
+    ;;
+  stop-recording)
+    killall -INT wf-recorder wl-screenrec obs 2>/dev/null || true
+    echo '{"stopped": true}'
     ;;
   clipboard)
     get_clipboard_info

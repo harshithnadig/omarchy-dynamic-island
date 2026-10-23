@@ -12,6 +12,11 @@ jq -e '
   (.audio.muted | type == "boolean") and
   (.display.brightness | type == "number") and
   (.recording.active | type == "boolean") and
+  (.hardware.cpu.pct | type == "number") and
+  (.hardware.ram.pct | type == "number") and
+  (.hardware.swap.pct | type == "number") and
+  (.hardware.gpu.name | type == "string") and
+  (.screenshots | type == "array") and
   (.agents.antigravity.available | type == "boolean") and
   (.agents.claude_code.available | type == "boolean") and
   (.agents.codex.available | type == "boolean") and

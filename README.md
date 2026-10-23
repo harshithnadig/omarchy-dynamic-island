@@ -4,7 +4,7 @@
 [![Omarchy Quattro](https://img.shields.io/badge/Omarchy-Quattro-8b5cf6.svg)](https://omarchy.org)
 [![Quickshell](https://img.shields.io/badge/Quickshell-0.3.2+-38bdf8.svg)](https://quickshell.outfoxxed.me)
 
-An Apple-style **Liquid Glass Dynamic Island** positioned at the top-center of your screen for **Omarchy** and **Hyprland**. Resting permanently as a sleek top-center pill that morphs organically in place, peeks fluidly on notifications, dances to live audio with Cava, shakes on alerts, and expands into a unified command center.
+An Apple-style **Liquid Glass Dynamic Island** positioned at the top-center of your screen for **Omarchy** and **Hyprland**. Resting flush against the top bezel as a sleek notch pill that morphs organically in place, peeks fluidly on notifications, dances to live audio with Cava, intercepts AI Agent permissions, monitors hardware health (CPU/RAM/Swap/GPU), shakes on alerts, and expands into a unified command center.
 
 ![Dynamic Island Pro Icon](assets/icon.svg)
 
@@ -12,16 +12,31 @@ An Apple-style **Liquid Glass Dynamic Island** positioned at the top-center of y
 
 ## ✨ Features
 
-### 🏝️ True In-Place Morphing & Fluid Spring Physics
-- **Permanent Top-Center Resting Pill:** Sits elegantly at the top-center of your screen (34px height) without taking screen estate or blocking underlying windows.
+### 🏝️ Flush Top-Bezel Notch & Fluid Elastic Physics
+- **Flush Top-Bezel Placement (0px default):** Nestled seamlessly against the top bezel without awkward gaps, with customizable position presets (`Flush 0px`, `Snug 2px`, `Floating 6px`).
+- **Interactive Press & Elastic Hover:** Physical spring scale feedback (`pressScale: 0.95` on press, `1.02` on hover) with organic spring damping.
 - **Organic In-Place Spring Morphing:** Morphs smoothly between Resting Pill (34px) $\rightarrow$ Notification Peek Banner (42px) $\rightarrow$ Full Liquid Glass Card (480×480px).
 - **Physical Shake & Dip Physics:** Sinusoidal damped oscillation (`shakeX`) and vertical bounce (`bounceY`) that physically shakes the island when focus sessions complete or alerts fire.
 - **100% Click-Through Masking:** All desktop space outside the island is completely transparent and click-through.
+
+### 🤖 AI Agents Studio & Interactive Permission Interceptor
+- **Permission Request Interceptor:** Native Quickshell `SocketServer` listening at `$XDG_RUNTIME_DIR/dynamic-island/agents.sock` that intercepts tool `PermissionRequest` events from Claude Code, Codex CLI, and Google Antigravity, popping open an interactive banner with `[ ✓ Allow ]` and `[ ✗ Deny ]` buttons right on the island.
+- **Local Models Browser (`llama-swap :18080`):** Connects to the local model router, displaying 11 available models (**Ternary Bonsai 2 27B**, **Gemma 4 12B**, **Granite 4.2 8B**, **Qwen 2.5 Coder**) with 1-click terminal chat/test.
+- **Quick Prompt Launcher:** Type a prompt directly into the island and launch with your favorite coding agent.
+
+### 📊 Live Hardware Health Capsule (CPU, RAM, Swap & GPU VRAM)
+- **Live Performance Telemetry:**
+  - **CPU %** with visual load bar
+  - **Memory (RAM):** Used / Total GB and percentage with high-memory alert color (>85%)
+  - **Swap Memory:** Used / Total GB and percentage
+  - **NVIDIA GPU VRAM & Temperature:** Real-time VRAM allocation and thermals (°C)
+- **⚡ Memory Optimizer:** 1-click button to flush page caches, drop caches, and sync memory to disk.
 
 ### 🔔 Apple-Grade Notification Peek Banners
 - **Live System Peeking:** The island springs open into an elegant notification banner for ~2.6s upon:
   - Track changes (song title, artist, art thumbnail)
   - Charger connected (`⚡ AC Power Connected`) or disconnected (`🔋 Running on Battery`)
+  - AI Agent events & permission requests
   - Focus session completion
   - Wallpaper changes & screenshot captures
   - System toggles (Night Light, Caffeine)
@@ -45,13 +60,9 @@ An Apple-style **Liquid Glass Dynamic Island** positioned at the top-center of y
   - ☕ **Caffeine:** Stay awake toggle (`omarchy toggle idle`)
   - 🔒 **Lock:** Instant lock session (`loginctl lock-session`)
 
-### 🤖 AI Agents & Local Models Hub (Bonsai 2 / llama-swap)
-- **Session Telemetry:** Live detection of running turns for **Google Antigravity**, **Claude Code**, and **Codex CLI**.
-- **Local Models Browser:** Connects to `llama-swap` on `127.0.0.1:18080`, enumerating 11 available models (including **Ternary Bonsai 2 27B**, **Gemma 4 12B**, **Granite 4.2 8B**, **Qwen 2.5 Coder**) with 1-click terminal chat/test.
-- **Quick Prompt Launcher:** Type a prompt directly into the island and launch with your favorite coding agent.
-
-### 📋 Shelf & Persistent Scratchpad
+### 📋 Shelf, Screenshots & Persistent Scratchpad
 - **Live Clipboard Preview:** Shows copied text snippet or full image thumbnail with 1-click "Copy Again" and "Clear" buttons.
+- **Recent Screenshots Gallery:** Interactive thumbnail strip of the 4 latest screenshots with 1-click open.
 - **Auto-Saved Scratchpad:** Persistent multi-line notepad for draft prompts, code snippets, or thoughts that survives shell reboots.
 
 ### ⏱️ Focus Studio & Splitting Satellite

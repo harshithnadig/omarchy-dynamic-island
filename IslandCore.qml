@@ -13,10 +13,11 @@ import qs.Ui
 Item {
   id: root
 
-  // Master States
+  // Master Expansion & Peek States
   property bool isExpanded: false
   property bool isPeeking: false
   property string activeTab: "music"
+  property int topOffset: 0 // Default 0px: FLUSH with top screen bezel (no gap!)
 
   // Shell & Telemetry
   readonly property string scriptPath:
@@ -52,7 +53,7 @@ Item {
   property bool capsuleHovered: false
   property string lastTrackSeen: ""
 
-  // Telemetry
+  // Telemetry & Hardware
   property int batteryPct: -1
   property string batteryStatus: "Unavailable"
   property bool batteryAvailable: false
@@ -61,6 +62,13 @@ Item {
   property var agentsData: ({})
   property var localModelsList: []
   property var clipboardData: ({ type: "empty", text: "", image_path: "" })
+  property var hardwareData: ({
+    cpu: { pct: 0 },
+    ram: { used_mb: 0, total_mb: 0, pct: 0 },
+    swap: { used_mb: 0, total_mb: 0, pct: 0 },
+    gpu: { name: "None", used_mb: 0, total_mb: 0, temp_c: 0 }
+  })
+  property var recentScreenshots: []
   property string clockLabel: Qt.formatTime(new Date(), "h:mm AP")
 
   // System Controls
@@ -100,8 +108,9 @@ Item {
   property real shakeX: 0
   property real bounceY: 0
 
-  // Peek Banners
+  // Peek Banners & Interactive Permission Interceptor
   property var peekData: ({ icon: "music", title: "", subtitle: "", target: "music" })
+  property var agentPendingRequest: null
 
   // State persistence
   property bool stateReady: false
@@ -113,6 +122,7 @@ Item {
 
   // Peek Width calculation
   readonly property real peekWidth: {
+    if (root.agentPendingRequest !== null) return Style.space(450)
     var titleLen = (root.peekData.title || "").length
     var subLen = (root.peekData.subtitle || "").length
     var maxLen = Math.max(titleLen, subLen)
@@ -122,6 +132,7 @@ Item {
   // Compact width calculation
   readonly property real compactWidth: {
     if (showVolumeHud) return Style.space(170)
+    if (isRecording) return Style.space(170)
     if (hasTrack) {
       return Math.min(Style.space(350), Style.space(120)
         + Math.max(miniTitle.implicitWidth, miniArtist.implicitWidth)
@@ -193,6 +204,80 @@ Item {
     }
   }
 
+  // ================= AGENT BRIDGE & PERMISSION INTERCEPTOR =================
+  readonly property string agentSocketDir:
+    (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/dynamic-island"
+  readonly property string agentSocketPath: agentSocketDir + "/agents.sock"
+
+  Process {
+    id: prepSocket
+    running: true
+    command: ["sh", "-c", "mkdir -p \"$1\" && chmod 700 \"$1\" && rm -f \"$2\"", "sh", root.agentSocketDir, root.agentSocketPath]
+    onExited: agentSocketServer.active = true
+  }
+
+  SocketServer {
+    id: agentSocketServer
+    active: false
+    path: root.agentSocketPath
+
+    handler: Socket {
+      id: incomingAgentSocket
+      property string activeReqId: ""
+
+      parser: SplitParser {
+        onRead: function(line) {
+          root.handleAgentLine(line, incomingAgentSocket)
+        }
+      }
+      onConnectedChanged: {
+        if (!connected && activeReqId !== "") {
+          if (root.agentPendingRequest && root.agentPendingRequest.id === activeReqId) {
+            root.agentPendingRequest = null
+          }
+        }
+      }
+    }
+  }
+
+  function handleAgentLine(line, sock) {
+    if (!line) return
+    try {
+      var msg = JSON.parse(line)
+      if (msg.event === "PermissionRequest") {
+        var reqId = msg.request || ("req-" + Date.now())
+        sock.activeReqId = reqId
+        root.agentPendingRequest = {
+          id: reqId,
+          agent: msg.agent || "Agent",
+          tool: msg.tool || "Command",
+          title: msg.title || msg.tool || "Permission Request",
+          detail: msg.detail || msg.command || "",
+          socket: sock
+        }
+        root.shake()
+        root.triggerPeek("🤖", (msg.agent || "Agent") + ": " + (msg.title || msg.tool), "Permission required · Click to answer", "agents", 8000)
+      } else if (msg.event === "PreToolUse") {
+        root.triggerPeek("🤖", (msg.agent || "Agent") + " running " + (msg.tool || "tool"), msg.title || "", "agents", 2200)
+      } else if (msg.event === "done" || msg.event === "SessionFinished") {
+        root.triggerPeek("✓", (msg.agent || "Agent") + " finished", msg.project || "Turn complete", "agents", 2500)
+      }
+    } catch (e) {}
+  }
+
+  function resolveAgentPermission(behavior) {
+    if (root.agentPendingRequest && root.agentPendingRequest.socket) {
+      try {
+        root.agentPendingRequest.socket.write(JSON.stringify({ behavior: behavior }) + "\n")
+      } catch (e) {}
+    }
+    var wasAgent = root.agentPendingRequest ? root.agentPendingRequest.agent : "Agent"
+    root.agentPendingRequest = null
+    root.triggerPeek(behavior === "allow" ? "✓" : "✕",
+      behavior === "allow" ? "Permission Allowed" : "Permission Denied",
+      wasAgent + " continuing", "agents", 1800)
+  }
+
   // ================= PHYSICAL SHAKE & BOUNCE ANIMATION =================
   SequentialAnimation {
     id: shakeAnim
@@ -249,9 +334,9 @@ Item {
   onBatteryStatusChanged: {
     if (lastBatteryStatusSeen !== "" && batteryStatus !== lastBatteryStatusSeen && !isExpanded) {
       if (batteryStatus === "Charging") {
-        triggerPeek("⚡", "Charging", (batteryPct >= 0 ? batteryPct + "%" : "AC Power") + " · Power Connected", "controls", 2500)
+        triggerPeek("⚡", "Charging", (batteryPct >= 0 ? batteryPct + "%" : "AC Power") + " · Power Connected", "system", 2500)
       } else if (batteryStatus === "Discharging") {
-        triggerPeek("🔋", "On Battery", (batteryPct >= 0 ? batteryPct + "%" : "Disconnected") + " · Running on battery", "controls", 2500)
+        triggerPeek("🔋", "On Battery", (batteryPct >= 0 ? batteryPct + "%" : "Disconnected") + " · Running on battery", "system", 2500)
       }
     }
     lastBatteryStatusSeen = batteryStatus
@@ -431,7 +516,8 @@ Item {
     stateTouched = true
     if (!stateReady) return
     stateFile.setText(JSON.stringify({
-      version: 5,
+      version: 6,
+      topOffset: topOffset,
       timerTotal: timerTotal,
       timerLeft: timerLeft,
       timerDeadline: timerDeadline,
@@ -454,6 +540,7 @@ Item {
     if (stateTouched) { persistState(); return }
     try {
       var saved = JSON.parse(stateFile.text() || "{}")
+      if (typeof saved.topOffset === "number") topOffset = saved.topOffset
       timerTotal = Math.max(0, Number(saved.timerTotal) || 0)
       timerLeft = Math.max(0, Number(saved.timerLeft) || 0)
       timerDeadline = Number(saved.timerDeadline) || 0
@@ -497,13 +584,25 @@ Item {
   function toggleNightlight() {
     nightlightEnabled = !nightlightEnabled
     Quickshell.execDetached(["bash", scriptPath, "toggle-nightlight"])
-    triggerPeek("🌙", "Night Light", nightlightEnabled ? "Enabled" : "Disabled", "controls", 2000)
+    triggerPeek("🌙", "Night Light", nightlightEnabled ? "Enabled" : "Disabled", "system", 2000)
   }
 
   function toggleIdle() {
     idleEnabled = !idleEnabled
     Quickshell.execDetached(["bash", scriptPath, "toggle-idle"])
-    triggerPeek("☕", "Caffeine / Stay Awake", idleEnabled ? "Active" : "Standard Idle", "controls", 2000)
+    triggerPeek("☕", "Caffeine / Stay Awake", idleEnabled ? "Active" : "Standard Idle", "system", 2000)
+  }
+
+  function optimizeMemory() {
+    Quickshell.execDetached(["bash", scriptPath, "optimize-memory"])
+    triggerPeek("⚡", "Memory Optimized", "Caches cleared & pages synced", "stats", 2200)
+    refreshTelemetry()
+  }
+
+  function stopRecording() {
+    Quickshell.execDetached(["bash", scriptPath, "stop-recording"])
+    isRecording = false
+    triggerPeek("🔴", "Recording Stopped", "Capture saved", "shelf", 2000)
   }
 
   function refreshTelemetry() {
@@ -520,7 +619,7 @@ Item {
 
   function nextOmarchyBackground() {
     Quickshell.execDetached(["omarchy", "theme", "bg", "next"])
-    triggerPeek("▧", "Wallpaper Changed", "Applied next Omarchy wallpaper", "controls", 2000)
+    triggerPeek("▧", "Wallpaper Changed", "Applied next Omarchy wallpaper", "system", 2000)
   }
 
   function openOmarchyThemeSwitcher() {
@@ -550,6 +649,11 @@ Item {
     triggerPeek("📋", "Clipboard Cleared", "Buffer is now empty", "shelf", 1800)
   }
 
+  function openFile(filePath) {
+    Quickshell.execDetached(["xdg-open", filePath])
+    root.isExpanded = false
+  }
+
   FileView {
     id: stateFile
     path: Quickshell.statePath("harshith.dynamic-island.json")
@@ -572,7 +676,7 @@ Item {
   }
 
   Timer {
-    interval: 8000
+    interval: 6000
     running: true
     repeat: true
     onTriggered: root.refreshTelemetry()
@@ -612,6 +716,12 @@ Item {
           if (data.recording) {
             root.isRecording = data.recording.active === true
           }
+          if (data.hardware) {
+            root.hardwareData = data.hardware
+          }
+          if (data.screenshots) {
+            root.recentScreenshots = data.screenshots
+          }
           if (data.agents) {
             root.agentsData = data.agents
             if (data.agents.local_models && Array.isArray(data.agents.local_models.models)) {
@@ -649,27 +759,27 @@ Item {
       id: ambientHalo
       z: 1
       anchors.centerIn: morphCard
-      width: morphCard.width + Style.space(24) + cavaVisualizer.beat * Style.space(16)
-      height: morphCard.height + Style.space(24) + cavaVisualizer.beat * Style.space(16)
+      width: morphCard.width + Style.space(26) + cavaVisualizer.beat * Style.space(20)
+      height: morphCard.height + Style.space(26) + cavaVisualizer.beat * Style.space(20)
       radius: morphCard.radius + Style.space(12)
       color: root.isPlaying
-        ? Qt.rgba(Commons.Color.accent.r, Commons.Color.accent.g, Commons.Color.accent.b, 0.20 + cavaVisualizer.level * 0.28)
+        ? Qt.rgba(Commons.Color.accent.r, Commons.Color.accent.g, Commons.Color.accent.b, 0.20 + cavaVisualizer.level * 0.30)
         : "transparent"
       opacity: root.isPlaying ? Math.min(1.0, 0.35 + cavaVisualizer.level * 0.65) : 0
       visible: opacity > 0.01
 
       Behavior on opacity { NumberAnimation { duration: 180 } }
-      Behavior on width { SpringAnimation { spring: 5.0; damping: 0.35; mass: 0.8 } }
-      Behavior on height { SpringAnimation { spring: 5.0; damping: 0.35; mass: 0.8 } }
-      Behavior on radius { NumberAnimation { duration: 240 } }
+      Behavior on width { SpringAnimation { spring: 5.5; damping: 0.33; mass: 0.75 } }
+      Behavior on height { SpringAnimation { spring: 5.5; damping: 0.33; mass: 0.75 } }
+      Behavior on radius { NumberAnimation { duration: 220 } }
     }
 
-    // THE MORPHING ISLAND CARD
+    // THE MORPHING ISLAND CARD (Physical Liquid Glass Pill)
     Rectangle {
       id: morphCard
       z: 2
       anchors.horizontalCenter: parent.horizontalCenter
-      y: Style.space(8)
+      y: root.topOffset
 
       width: root.isExpanded
         ? Style.space(480)
@@ -681,40 +791,52 @@ Item {
         ? Style.space(26)
         : (root.isPeeking ? Style.space(21) : Style.space(17))
 
+      // Physical spring scale response on click and hover
+      scale: compactMouse.pressed ? 0.95 : (root.capsuleHovered ? 1.02 : 1.0)
+      transformOrigin: Item.Top
+      Behavior on scale { SpringAnimation { spring: 6.0; damping: 0.35 } }
+
       transform: Translate {
         x: root.shakeX
         y: root.bounceY
       }
 
       gradient: Gradient {
-        GradientStop { position: 0.0; color: "#1c1c20" }
-        GradientStop { position: 0.28; color: "#09090c" }
-        GradientStop { position: 1.0; color: "#030305" }
+        GradientStop { position: 0.0; color: "#18181c" }
+        GradientStop { position: 0.25; color: "#09090d" }
+        GradientStop { position: 1.0; color: "#020204" }
       }
 
       border.color: root.isExpanded
         ? Qt.rgba(Commons.Color.accent.r, Commons.Color.accent.g, Commons.Color.accent.b, 0.55)
-        : (root.isPeeking
-          ? Qt.rgba(Commons.Color.accent.r, Commons.Color.accent.g, Commons.Color.accent.b, 0.45)
-          : (root.capsuleHovered ? Qt.rgba(1, 1, 1, 0.26) : Qt.rgba(1, 1, 1, 0.12)))
+        : (root.agentPendingRequest !== null
+          ? "#f59e0b"
+          : (root.isPeeking
+            ? Qt.rgba(Commons.Color.accent.r, Commons.Color.accent.g, Commons.Color.accent.b, 0.45)
+            : (root.capsuleHovered ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.12))))
       border.width: 1
       clip: true
 
-      Behavior on width { SpringAnimation { spring: 5.0; damping: 0.35; mass: 0.8 } }
-      Behavior on height { SpringAnimation { spring: 5.0; damping: 0.35; mass: 0.8 } }
-      Behavior on radius { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+      Behavior on width { SpringAnimation { spring: 5.5; damping: 0.33; mass: 0.75 } }
+      Behavior on height { SpringAnimation { spring: 5.5; damping: 0.33; mass: 0.75 } }
+      Behavior on radius { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
       Behavior on border.color { ColorAnimation { duration: 180 } }
 
-      // Physical Specular Sheen (Curved Glass Edge)
+      // Physical Specular Curved Glass Edge
       Rectangle {
         anchors.top: parent.top
-        anchors.topMargin: 1.2
+        anchors.topMargin: root.topOffset === 0 ? 0 : 1.2
         anchors.horizontalCenter: parent.horizontalCenter
-        width: Math.max(0, parent.width - Style.space(32))
+        width: Math.max(0, parent.width - Style.space(28))
         height: 1.2
         radius: 0.6
-        color: root.capsuleInk
-        opacity: root.isExpanded ? 0.35 : (root.capsuleHovered || root.isPeeking ? 0.28 : 0.16)
+        gradient: Gradient {
+          orientation: Gradient.Horizontal
+          GradientStop { position: 0.0; color: "transparent" }
+          GradientStop { position: 0.5; color: Qt.rgba(1, 1, 1, 0.45) }
+          GradientStop { position: 1.0; color: "transparent" }
+        }
+        opacity: root.isExpanded ? 0.4 : (root.capsuleHovered || root.isPeeking ? 0.35 : 0.22)
         Behavior on opacity { NumberAnimation { duration: 180 } }
       }
 
@@ -726,6 +848,11 @@ Item {
         acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
         cursorShape: Qt.PointingHandCursor
         onClicked: function(mouse) {
+          if (root.agentPendingRequest !== null) {
+            root.activeTab = "agents"
+            root.isExpanded = true
+            return
+          }
           if (root.isPeeking) {
             root.activeTab = root.peekData.target || "music"
             root.isPeeking = false
@@ -754,17 +881,75 @@ Item {
       // -------------------------------------------------------------
       Item {
         anchors.fill: parent
-        visible: !root.isExpanded && root.isPeeking
-        opacity: !root.isExpanded && root.isPeeking ? 1 : 0
+        visible: !root.isExpanded && (root.isPeeking || root.agentPendingRequest !== null)
+        opacity: !root.isExpanded && (root.isPeeking || root.agentPendingRequest !== null) ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: 160 } }
 
+        // Agent Permission Request Peek Banner
+        RowLayout {
+          anchors.fill: parent
+          anchors.leftMargin: Style.space(10)
+          anchors.rightMargin: Style.space(10)
+          spacing: Style.space(8)
+          visible: root.agentPendingRequest !== null
+
+          Rectangle {
+            Layout.preferredWidth: Style.space(26)
+            Layout.preferredHeight: Style.space(26)
+            radius: Style.space(7)
+            color: Qt.rgba(0.96, 0.62, 0.04, 0.2)
+            Text { anchors.centerIn: parent; text: "🤖"; font.pixelSize: Style.font.caption }
+          }
+
+          ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 0
+            Text {
+              Layout.fillWidth: true
+              text: root.agentPendingRequest ? (root.agentPendingRequest.agent + " · " + root.agentPendingRequest.tool) : "Permission Request"
+              textFormat: Text.PlainText
+              elide: Text.ElideRight
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+              font.weight: Font.DemiBold
+              color: root.capsuleInk
+            }
+            Text {
+              Layout.fillWidth: true
+              text: root.agentPendingRequest ? root.agentPendingRequest.detail : ""
+              textFormat: Text.PlainText
+              elide: Text.ElideRight
+              font.family: Style.font.family
+              font.pixelSize: Style.space(10)
+              color: "#f59e0b"
+            }
+          }
+
+          Row {
+            spacing: Style.space(4)
+            Rectangle {
+              width: Style.space(48); height: Style.space(24); radius: Style.space(6)
+              color: "#10b981"
+              Text { anchors.centerIn: parent; text: "Allow"; font.pixelSize: Style.space(10); font.weight: Font.Bold; color: "#064e3b" }
+              MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.resolveAgentPermission("allow") }
+            }
+            Rectangle {
+              width: Style.space(44); height: Style.space(24); radius: Style.space(6)
+              color: Qt.rgba(1, 1, 1, 0.1)
+              Text { anchors.centerIn: parent; text: "Deny"; font.pixelSize: Style.space(10); font.weight: Font.DemiBold; color: root.capsuleInk }
+              MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.resolveAgentPermission("deny") }
+            }
+          }
+        }
+
+        // Standard Event Peek Banner
         RowLayout {
           anchors.fill: parent
           anchors.leftMargin: Style.space(10)
           anchors.rightMargin: Style.space(12)
           spacing: Style.space(10)
+          visible: root.agentPendingRequest === null
 
-          // Leading Badge
           Rectangle {
             Layout.preferredWidth: Style.space(26)
             Layout.preferredHeight: Style.space(26)
@@ -789,7 +974,6 @@ Item {
             }
           }
 
-          // Center: Title & Subtitle
           ColumnLayout {
             Layout.fillWidth: true
             spacing: 0
@@ -814,7 +998,6 @@ Item {
             }
           }
 
-          // Trailing Indicator / Action
           Text {
             text: "↗"
             font.pixelSize: Style.font.body
@@ -828,8 +1011,8 @@ Item {
       // -------------------------------------------------------------
       Item {
         anchors.fill: parent
-        visible: !root.isExpanded && !root.isPeeking
-        opacity: !root.isExpanded && !root.isPeeking ? 1 : 0
+        visible: !root.isExpanded && !root.isPeeking && root.agentPendingRequest === null
+        opacity: !root.isExpanded && !root.isPeeking && root.agentPendingRequest === null ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: 160 } }
 
         // Volume HUD on Scroll
@@ -864,15 +1047,48 @@ Item {
           }
         }
 
+        // Screen Recording Mode
+        RowLayout {
+          anchors.fill: parent
+          anchors.leftMargin: Style.space(12)
+          anchors.rightMargin: Style.space(12)
+          spacing: Style.space(8)
+          visible: !root.showVolumeHud && root.isRecording
+
+          Rectangle {
+            width: Style.space(8); height: Style.space(8); radius: width / 2
+            color: "#ef4444"
+            SequentialAnimation on opacity {
+              loops: Animation.Infinite
+              NumberAnimation { from: 1.0; to: 0.2; duration: 600 }
+              NumberAnimation { from: 0.2; to: 1.0; duration: 600 }
+            }
+          }
+          Text {
+            Layout.fillWidth: true
+            text: "Recording Active"
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+            font.weight: Font.DemiBold
+            color: root.capsuleInk
+          }
+          Rectangle {
+            width: Style.space(38); height: Style.space(20); radius: Style.space(5)
+            color: Qt.rgba(0.9, 0.2, 0.2, 0.25)
+            Text { anchors.centerIn: parent; text: "Stop"; font.pixelSize: Style.space(9); font.weight: Font.Bold; color: "#f87171" }
+            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.stopRecording() }
+          }
+        }
+
         // Music Mode
         RowLayout {
           anchors.fill: parent
           anchors.leftMargin: Style.space(6)
           anchors.rightMargin: Style.space(10)
           spacing: Style.space(8)
-          visible: !root.showVolumeHud && root.hasTrack
+          visible: !root.showVolumeHud && !root.isRecording && root.hasTrack
 
-          // Leading: Square Album Art / Rotating Vinyl
+          // Album Art / Vinyl
           Rectangle {
             Layout.preferredWidth: Style.space(24)
             Layout.preferredHeight: Style.space(24)
@@ -913,7 +1129,7 @@ Item {
             }
           }
 
-          // Center: Track Title & Artist
+          // Track Title & Artist
           ColumnLayout {
             Layout.fillWidth: true
             spacing: 0
@@ -940,7 +1156,7 @@ Item {
             }
           }
 
-          // Trailing: 4-Bar Cava Equalizer
+          // 4-Bar Cava Equalizer
           Row {
             spacing: Style.space(2.4)
             visible: root.isPlaying
@@ -955,7 +1171,6 @@ Item {
                   : Style.space(3)
                 radius: Style.space(1.2)
                 color: root.accent
-
                 Behavior on height { NumberAnimation { duration: 65 } }
               }
             }
@@ -976,7 +1191,7 @@ Item {
           anchors.leftMargin: Style.space(12)
           anchors.rightMargin: Style.space(12)
           spacing: Style.space(8)
-          visible: !root.showVolumeHud && !root.hasTrack && root.timerActive
+          visible: !root.showVolumeHud && !root.isRecording && !root.hasTrack && root.timerActive
 
           Text { text: "⏱️"; font.pixelSize: Style.font.body }
           Text {
@@ -999,7 +1214,7 @@ Item {
           anchors.leftMargin: Style.space(12)
           anchors.rightMargin: Style.space(12)
           spacing: Style.space(8)
-          visible: !root.showVolumeHud && !root.hasTrack && !root.timerActive
+          visible: !root.showVolumeHud && !root.isRecording && !root.hasTrack && !root.timerActive
 
           Text {
             id: clockDisplay
@@ -1039,22 +1254,21 @@ Item {
       // -------------------------------------------------------------
       ColumnLayout {
         anchors.fill: parent
-        anchors.margins: Style.space(14)
+        anchors.margins: Style.space(12)
         spacing: Style.space(10)
         visible: root.isExpanded
         opacity: root.isExpanded ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: 200 } }
 
-        // Top Navigation Header (Capsule handle + 5 Tabs)
+        // Top Navigation Header (Capsule handle + 6 Tabs)
         RowLayout {
           Layout.fillWidth: true
           spacing: Style.space(6)
 
-          // Capsule Morph Handle (Click to Collapse)
           Rectangle {
-            Layout.preferredWidth: Style.space(34)
-            Layout.preferredHeight: Style.space(28)
-            radius: Style.space(8)
+            Layout.preferredWidth: Style.space(32)
+            Layout.preferredHeight: Style.space(26)
+            radius: Style.space(7)
             color: Qt.rgba(1, 1, 1, 0.08)
             Text {
               anchors.centerIn: parent
@@ -1072,43 +1286,45 @@ Item {
           // Tabs
           RowLayout {
             Layout.fillWidth: true
-            spacing: Style.space(4)
+            spacing: Style.space(3)
             Repeater {
               model: [
                 { key: "music", label: "Music", icon: "♫" },
                 { key: "timer", label: "Focus", icon: "⏱️" },
-                { key: "agents", label: "AI Studio", icon: "🤖" },
+                { key: "agents", label: "AI", icon: "🤖" },
+                { key: "stats", label: "Stats", icon: "📊" },
                 { key: "shelf", label: "Shelf", icon: "📋" },
-                { key: "controls", label: "Controls", icon: "🎛️" }
+                { key: "system", label: "Sys", icon: "🎛️" }
               ]
               Rectangle {
+                id: tabBtn
                 required property var modelData
                 Layout.fillWidth: true
-                height: Style.space(28)
-                radius: Style.space(7)
-                color: root.activeTab === modelData.key ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.22) : root.glass
-                border.color: root.activeTab === modelData.key ? root.accent : Qt.rgba(1, 1, 1, 0.08)
+                height: Style.space(26)
+                radius: Style.space(6)
+                color: root.activeTab === tabBtn.modelData.key ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.22) : root.glass
+                border.color: root.activeTab === tabBtn.modelData.key ? root.accent : Qt.rgba(1, 1, 1, 0.08)
                 border.width: 1
 
                 Row {
                   anchors.centerIn: parent
-                  spacing: Style.space(4)
+                  spacing: Style.space(3)
                   Text {
-                    text: modelData.icon
-                    font.pixelSize: Style.space(11)
+                    text: tabBtn.modelData.icon
+                    font.pixelSize: Style.space(10)
                   }
                   Text {
-                    text: modelData.label
-                    color: root.activeTab === parent.parent.modelData.key ? root.capsuleInk : Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.6)
+                    text: tabBtn.modelData.label
+                    color: root.activeTab === tabBtn.modelData.key ? root.capsuleInk : Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.6)
                     font.family: Style.font.family
-                    font.pixelSize: Style.space(11)
-                    font.weight: root.activeTab === parent.parent.modelData.key ? Font.DemiBold : Font.Normal
+                    font.pixelSize: Style.space(10)
+                    font.weight: root.activeTab === tabBtn.modelData.key ? Font.DemiBold : Font.Normal
                   }
                 }
                 MouseArea {
                   anchors.fill: parent
                   cursorShape: Qt.PointingHandCursor
-                  onClicked: root.activeTab = parent.modelData.key
+                  onClicked: root.activeTab = tabBtn.modelData.key
                 }
               }
             }
@@ -1122,7 +1338,6 @@ Item {
           Layout.fillHeight: true
           spacing: Style.space(12)
 
-          // Album Artwork & Track Info
           RowLayout {
             Layout.fillWidth: true
             spacing: Style.space(14)
@@ -1198,7 +1413,7 @@ Item {
             }
           }
 
-          // Interactive Seek Progress Bar
+          // Seek Progress Bar
           ColumnLayout {
             Layout.fillWidth: true
             spacing: Style.space(4)
@@ -1245,13 +1460,14 @@ Item {
             }
           }
 
-          // Main Media Controls
+          // Controls
           RowLayout {
             Layout.alignment: Qt.AlignHCenter
             spacing: Style.space(24)
             Repeater {
               model: ["previous", "play-pause", "next"]
               Rectangle {
+                id: mediaCtrlBtn
                 required property string modelData
                 readonly property bool primary: modelData === "play-pause"
                 readonly property var p: root.currentPlayer
@@ -1266,22 +1482,22 @@ Item {
 
                 Text {
                   anchors.centerIn: parent
-                  text: modelData === "previous" ? "⏮" : modelData === "next" ? "⏭" : root.isPlaying ? "⏸" : "▶"
-                  color: parent.available ? (parent.primary ? "#08080a" : root.capsuleInk) : Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.25)
-                  font.pixelSize: parent.primary ? Style.font.title : Style.font.body
+                  text: mediaCtrlBtn.modelData === "previous" ? "⏮" : mediaCtrlBtn.modelData === "next" ? "⏭" : root.isPlaying ? "⏸" : "▶"
+                  color: mediaCtrlBtn.available ? (mediaCtrlBtn.primary ? "#08080a" : root.capsuleInk) : Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.25)
+                  font.pixelSize: mediaCtrlBtn.primary ? Style.font.title : Style.font.body
                   font.weight: Font.DemiBold
                 }
                 MouseArea {
                   anchors.fill: parent
-                  enabled: parent.available
+                  enabled: mediaCtrlBtn.available
                   cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                  onClicked: root.mediaAction(parent.modelData)
+                  onClicked: root.mediaAction(mediaCtrlBtn.modelData)
                 }
               }
             }
           }
 
-          // Multi-Player Selector Chips
+          // Player Selector Chips
           ListView {
             Layout.fillWidth: true
             height: Style.space(32)
@@ -1296,18 +1512,8 @@ Item {
               radius: height / 2
               color: root.selectedPlayer === null ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.24) : root.glass
               border.color: root.selectedPlayer === null ? root.accent : Qt.rgba(1, 1, 1, 0.1)
-              Text {
-                anchors.centerIn: parent
-                text: "Auto"
-                font.family: Style.font.family
-                font.pixelSize: Style.font.caption
-                color: root.capsuleInk
-              }
-              MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.selectPlayer(null)
-              }
+              Text { anchors.centerIn: parent; text: "Auto"; font.family: Style.font.family; font.pixelSize: Style.font.caption; color: root.capsuleInk }
+              MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.selectPlayer(null) }
             }
 
             delegate: Rectangle {
@@ -1345,7 +1551,6 @@ Item {
           Layout.fillHeight: true
           spacing: Style.space(10)
 
-          // Big Timer Card
           Rectangle {
             Layout.fillWidth: true
             height: Style.space(90)
@@ -1375,7 +1580,6 @@ Item {
             }
           }
 
-          // Timer Controls
           RowLayout {
             Layout.fillWidth: true
             spacing: Style.space(8)
@@ -1402,7 +1606,6 @@ Item {
             }
           }
 
-          // Presets
           Text {
             text: "Presets (" + root.focusSessions + " completed sessions)"
             font.family: Style.font.family
@@ -1445,7 +1648,6 @@ Item {
             }
           }
 
-          // Custom Session Label & Chime Toggle
           RowLayout {
             Layout.fillWidth: true
             spacing: Style.space(8)
@@ -1477,7 +1679,6 @@ Item {
             }
           }
 
-          // Stopwatch Row
           RowLayout {
             Layout.fillWidth: true
             spacing: Style.space(8)
@@ -1504,6 +1705,43 @@ Item {
           Layout.fillHeight: true
           spacing: Style.space(8)
 
+          // Interactive Pending Permission Card (if any)
+          Rectangle {
+            Layout.fillWidth: true
+            height: Style.space(64)
+            radius: Style.space(10)
+            color: Qt.rgba(0.96, 0.62, 0.04, 0.14)
+            border.color: "#f59e0b"
+            visible: root.agentPendingRequest !== null
+
+            RowLayout {
+              anchors.fill: parent
+              anchors.margins: Style.space(8)
+              spacing: Style.space(10)
+              Text { text: "⚠️"; font.pixelSize: Style.font.title }
+              ColumnLayout {
+                Layout.fillWidth: true; spacing: 1
+                Text { text: root.agentPendingRequest ? (root.agentPendingRequest.agent + " asks permission") : ""; font.family: Style.font.family; font.pixelSize: Style.font.caption; font.weight: Font.DemiBold; color: root.capsuleInk }
+                Text { text: root.agentPendingRequest ? root.agentPendingRequest.title : ""; font.pixelSize: Style.space(10); elide: Text.ElideRight; color: "#f59e0b" }
+              }
+              Row {
+                spacing: Style.space(6)
+                Controls.Button {
+                  text: "Allow"
+                  onClicked: root.resolveAgentPermission("allow")
+                  background: Rectangle { radius: Style.space(6); color: "#10b981" }
+                  contentItem: Text { text: "Allow"; font.pixelSize: Style.space(11); font.weight: Font.Bold; color: "#064e3b" }
+                }
+                Controls.Button {
+                  text: "Deny"
+                  onClicked: root.resolveAgentPermission("deny")
+                  background: Rectangle { radius: Style.space(6); color: Qt.rgba(1, 1, 1, 0.1) }
+                  contentItem: Text { text: "Deny"; font.pixelSize: Style.space(11); color: root.capsuleInk }
+                }
+              }
+            }
+          }
+
           // Quick Prompt Bar
           RowLayout {
             Layout.fillWidth: true
@@ -1511,7 +1749,7 @@ Item {
             Controls.TextField {
               id: agentPromptField
               Layout.fillWidth: true
-              placeholderText: "Quick prompt: e.g. fix swap or run unit tests..."
+              placeholderText: "Quick prompt: e.g. review code or fix memory..."
               color: root.capsuleInk
               placeholderTextColor: Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.4)
               font.family: Style.font.family
@@ -1526,9 +1764,9 @@ Item {
               }
             }
             Rectangle {
-              Layout.preferredWidth: Style.space(64)
-              Layout.preferredHeight: Style.space(32)
-              radius: Style.space(8)
+              Layout.preferredWidth: Style.space(60)
+              Layout.preferredHeight: Style.space(30)
+              radius: Style.space(7)
               color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.25)
               border.color: root.accent
               Text { anchors.centerIn: parent; text: "Run"; font.pixelSize: Style.font.caption; font.weight: Font.DemiBold; color: root.capsuleInk }
@@ -1548,72 +1786,65 @@ Item {
           // Agents List
           ColumnLayout {
             Layout.fillWidth: true
-            spacing: Style.space(6)
+            spacing: Style.space(5)
 
-            // Google Antigravity
             Rectangle {
               Layout.fillWidth: true
-              height: Style.space(48)
-              radius: Style.space(10)
+              height: Style.space(42)
+              radius: Style.space(9)
               color: root.glass
               border.color: Qt.rgba(1, 1, 1, 0.1)
               RowLayout {
-                anchors.fill: parent; anchors.margins: Style.space(8); spacing: Style.space(8)
-                Rectangle { width: Style.space(30); height: Style.space(30); radius: Style.space(7); color: Qt.rgba(0.2, 0.6, 1, 0.18)
-                  Text { anchors.centerIn: parent; text: "🤖"; font.pixelSize: Style.font.caption } }
+                anchors.fill: parent; anchors.margins: Style.space(6); spacing: Style.space(8)
+                Text { text: "🤖"; font.pixelSize: Style.font.caption }
                 ColumnLayout { Layout.fillWidth: true; spacing: 0
                   Text { text: "Google Antigravity"; font.family: Style.font.family; font.pixelSize: Style.font.caption; font.weight: Font.DemiBold; color: root.capsuleInk }
                   Text { text: root.agentsData.antigravity && root.agentsData.antigravity.active ? "● Active Session" : "Installed & Ready"; font.pixelSize: Style.space(9); color: root.agentsData.antigravity && root.agentsData.antigravity.active ? "#34d399" : Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.5) } }
-                Rectangle { width: Style.space(60); height: Style.space(24); radius: Style.space(6); color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.2)
-                  Text { anchors.centerIn: parent; text: "Launch"; font.pixelSize: Style.space(11); color: root.capsuleInk; font.weight: Font.DemiBold }
+                Rectangle { width: Style.space(56); height: Style.space(22); radius: Style.space(5); color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.2)
+                  Text { anchors.centerIn: parent; text: "Launch"; font.pixelSize: Style.space(10); color: root.capsuleInk; font.weight: Font.DemiBold }
                   MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.launchTerminal("agy") } }
               }
             }
 
-            // Claude Code
             Rectangle {
               Layout.fillWidth: true
-              height: Style.space(48)
-              radius: Style.space(10)
+              height: Style.space(42)
+              radius: Style.space(9)
               color: root.glass
               border.color: Qt.rgba(1, 1, 1, 0.1)
               RowLayout {
-                anchors.fill: parent; anchors.margins: Style.space(8); spacing: Style.space(8)
-                Rectangle { width: Style.space(30); height: Style.space(30); radius: Style.space(7); color: Qt.rgba(0.9, 0.4, 0.2, 0.18)
-                  Text { anchors.centerIn: parent; text: "⚡"; font.pixelSize: Style.font.caption } }
+                anchors.fill: parent; anchors.margins: Style.space(6); spacing: Style.space(8)
+                Text { text: "⚡"; font.pixelSize: Style.font.caption }
                 ColumnLayout { Layout.fillWidth: true; spacing: 0
                   Text { text: "Claude Code"; font.family: Style.font.family; font.pixelSize: Style.font.caption; font.weight: Font.DemiBold; color: root.capsuleInk }
                   Text { text: root.agentsData.claude_code && root.agentsData.claude_code.active ? "● Active Session" : "Installed & Ready"; font.pixelSize: Style.space(9); color: root.agentsData.claude_code && root.agentsData.claude_code.active ? "#34d399" : Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.5) } }
-                Rectangle { width: Style.space(60); height: Style.space(24); radius: Style.space(6); color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.2)
-                  Text { anchors.centerIn: parent; text: "Launch"; font.pixelSize: Style.space(11); color: root.capsuleInk; font.weight: Font.DemiBold }
+                Rectangle { width: Style.space(56); height: Style.space(22); radius: Style.space(5); color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.2)
+                  Text { anchors.centerIn: parent; text: "Launch"; font.pixelSize: Style.space(10); color: root.capsuleInk; font.weight: Font.DemiBold }
                   MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.launchTerminal("claude") } }
               }
             }
 
-            // Codex CLI
             Rectangle {
               Layout.fillWidth: true
-              height: Style.space(48)
-              radius: Style.space(10)
+              height: Style.space(42)
+              radius: Style.space(9)
               color: root.glass
               border.color: Qt.rgba(1, 1, 1, 0.1)
               RowLayout {
-                anchors.fill: parent; anchors.margins: Style.space(8); spacing: Style.space(8)
-                Rectangle { width: Style.space(30); height: Style.space(30); radius: Style.space(7); color: Qt.rgba(0.1, 0.8, 0.5, 0.18)
-                  Text { anchors.centerIn: parent; text: "💻"; font.pixelSize: Style.font.caption } }
+                anchors.fill: parent; anchors.margins: Style.space(6); spacing: Style.space(8)
+                Text { text: "💻"; font.pixelSize: Style.font.caption }
                 ColumnLayout { Layout.fillWidth: true; spacing: 0
                   Text { text: "Codex CLI"; font.family: Style.font.family; font.pixelSize: Style.font.caption; font.weight: Font.DemiBold; color: root.capsuleInk }
                   Text { text: root.agentsData.codex && root.agentsData.codex.active ? "● Active Session" : "Installed & Ready"; font.pixelSize: Style.space(9); color: root.agentsData.codex && root.agentsData.codex.active ? "#34d399" : Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.5) } }
-                Rectangle { width: Style.space(60); height: Style.space(24); radius: Style.space(6); color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.2)
-                  Text { anchors.centerIn: parent; text: "Launch"; font.pixelSize: Style.space(11); color: root.capsuleInk; font.weight: Font.DemiBold }
+                Rectangle { width: Style.space(56); height: Style.space(22); radius: Style.space(5); color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.2)
+                  Text { anchors.centerIn: parent; text: "Launch"; font.pixelSize: Style.space(10); color: root.capsuleInk; font.weight: Font.DemiBold }
                   MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.launchTerminal("codex") } }
               }
             }
           }
 
-          // Local Models (llama-swap / llama.cpp)
           Text {
-            text: "Local Models (llama-swap :18080 · " + root.localModelsList.length + " available)"
+            text: "Local Models (llama-swap :18080 · " + root.localModelsList.length + " models)"
             font.family: Style.font.family
             font.pixelSize: Style.space(11)
             font.weight: Font.DemiBold
@@ -1627,9 +1858,10 @@ Item {
             spacing: Style.space(4)
             model: root.localModelsList
             delegate: Rectangle {
+              id: modelItemCard
               required property var modelData
               width: parent ? parent.width : 0
-              height: Style.space(34)
+              height: Style.space(32)
               radius: Style.space(7)
               color: root.glass
               border.color: Qt.rgba(1, 1, 1, 0.08)
@@ -1637,11 +1869,11 @@ Item {
                 anchors.fill: parent; anchors.margins: Style.space(6); spacing: Style.space(8)
                 Rectangle {
                   width: Style.space(8); height: Style.space(8); radius: width / 2
-                  color: parent.parent.modelData.status === "loaded" ? "#34d399" : Qt.rgba(1, 1, 1, 0.3)
+                  color: modelItemCard.modelData.status === "loaded" ? "#34d399" : Qt.rgba(1, 1, 1, 0.3)
                 }
                 Text {
                   Layout.fillWidth: true
-                  text: parent.parent.modelData.id || "Model"
+                  text: modelItemCard.modelData.id || "Model"
                   font.family: Style.font.family
                   font.pixelSize: Style.font.caption
                   elide: Text.ElideRight
@@ -1650,12 +1882,12 @@ Item {
                 Rectangle {
                   width: Style.space(48); height: Style.space(20); radius: Style.space(5)
                   color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
-                  Text { anchors.centerIn: parent; text: "Select"; font.pixelSize: Style.space(10); color: root.capsuleInk }
+                  Text { anchors.centerIn: parent; text: "Chat"; font.pixelSize: Style.space(10); color: root.capsuleInk }
                   MouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
-                      root.launchTerminal("curl -s -N http://127.0.0.1:18080/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"" + parent.parent.parent.modelData.id + "\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello! Tell me about yourself.\"}],\"stream\":true}'")
+                      root.launchTerminal("curl -s -N http://127.0.0.1:18080/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"" + modelItemCard.modelData.id + "\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello!\"}],\"stream\":true}'")
                     }
                   }
                 }
@@ -1664,7 +1896,155 @@ Item {
           }
         }
 
-        // ================= TAB 4: SHELF & CLIPBOARD =================
+        // ================= TAB 4: HARDWARE STATS =================
+        ColumnLayout {
+          visible: root.activeTab === "stats"
+          Layout.fillWidth: true
+          Layout.fillHeight: true
+          spacing: Style.space(10)
+
+          // 4 Hardware Stat Cards
+          GridLayout {
+            Layout.fillWidth: true
+            columns: 2
+            rowSpacing: Style.space(8)
+            columnSpacing: Style.space(8)
+
+            // CPU
+            Rectangle {
+              Layout.fillWidth: true
+              height: Style.space(64)
+              radius: Style.space(10)
+              color: root.glass
+              border.color: Qt.rgba(1, 1, 1, 0.1)
+              ColumnLayout {
+                anchors.fill: parent; anchors.margins: Style.space(8); spacing: Style.space(4)
+                RowLayout {
+                  Text { text: "⚙️ CPU Usage"; font.family: Style.font.family; font.pixelSize: Style.space(11); color: Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.6) }
+                  Item { Layout.fillWidth: true }
+                  Text { text: (root.hardwareData.cpu ? root.hardwareData.cpu.pct : 0) + "%"; font.bold: true; font.pixelSize: Style.space(12); color: root.capsuleInk }
+                }
+                Rectangle {
+                  Layout.fillWidth: true; height: Style.space(4); radius: 2; color: Qt.rgba(1, 1, 1, 0.15)
+                  Rectangle {
+                    width: parent.width * Math.max(0, Math.min(1, (root.hardwareData.cpu ? root.hardwareData.cpu.pct : 0) / 100))
+                    height: parent.height; radius: 2; color: root.accent
+                  }
+                }
+              }
+            }
+
+            // RAM
+            Rectangle {
+              Layout.fillWidth: true
+              height: Style.space(64)
+              radius: Style.space(10)
+              color: root.glass
+              border.color: Qt.rgba(1, 1, 1, 0.1)
+              ColumnLayout {
+                anchors.fill: parent; anchors.margins: Style.space(8); spacing: Style.space(4)
+                RowLayout {
+                  Text { text: "🧠 Memory (RAM)"; font.family: Style.font.family; font.pixelSize: Style.space(11); color: Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.6) }
+                  Item { Layout.fillWidth: true }
+                  Text { text: (root.hardwareData.ram ? root.hardwareData.ram.pct : 0) + "%"; font.bold: true; font.pixelSize: Style.space(12); color: root.hardwareData.ram && root.hardwareData.ram.pct > 85 ? "#f87171" : root.capsuleInk }
+                }
+                Rectangle {
+                  Layout.fillWidth: true; height: Style.space(4); radius: 2; color: Qt.rgba(1, 1, 1, 0.15)
+                  Rectangle {
+                    width: parent.width * Math.max(0, Math.min(1, (root.hardwareData.ram ? root.hardwareData.ram.pct : 0) / 100))
+                    height: parent.height; radius: 2; color: root.hardwareData.ram && root.hardwareData.ram.pct > 85 ? "#ef4444" : root.accent
+                  }
+                }
+                Text {
+                  text: root.hardwareData.ram ? (Math.round(root.hardwareData.ram.used_mb / 102.4) / 10 + " / " + Math.round(root.hardwareData.ram.total_mb / 102.4) / 10 + " GB") : ""
+                  font.pixelSize: Style.space(9); color: Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.5)
+                }
+              }
+            }
+
+            // Swap
+            Rectangle {
+              Layout.fillWidth: true
+              height: Style.space(64)
+              radius: Style.space(10)
+              color: root.glass
+              border.color: Qt.rgba(1, 1, 1, 0.1)
+              ColumnLayout {
+                anchors.fill: parent; anchors.margins: Style.space(8); spacing: Style.space(4)
+                RowLayout {
+                  Text { text: "💾 Swap Memory"; font.family: Style.font.family; font.pixelSize: Style.space(11); color: Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.6) }
+                  Item { Layout.fillWidth: true }
+                  Text { text: (root.hardwareData.swap ? root.hardwareData.swap.pct : 0) + "%"; font.bold: true; font.pixelSize: Style.space(12); color: root.capsuleInk }
+                }
+                Rectangle {
+                  Layout.fillWidth: true; height: Style.space(4); radius: 2; color: Qt.rgba(1, 1, 1, 0.15)
+                  Rectangle {
+                    width: parent.width * Math.max(0, Math.min(1, (root.hardwareData.swap ? root.hardwareData.swap.pct : 0) / 100))
+                    height: parent.height; radius: 2; color: "#38bdf8"
+                  }
+                }
+                Text {
+                  text: root.hardwareData.swap ? (Math.round(root.hardwareData.swap.used_mb / 102.4) / 10 + " / " + Math.round(root.hardwareData.swap.total_mb / 102.4) / 10 + " GB") : ""
+                  font.pixelSize: Style.space(9); color: Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.5)
+                }
+              }
+            }
+
+            // GPU VRAM
+            Rectangle {
+              Layout.fillWidth: true
+              height: Style.space(64)
+              radius: Style.space(10)
+              color: root.glass
+              border.color: Qt.rgba(1, 1, 1, 0.1)
+              ColumnLayout {
+                anchors.fill: parent; anchors.margins: Style.space(8); spacing: Style.space(4)
+                RowLayout {
+                  Text { text: "🎮 GPU VRAM"; font.family: Style.font.family; font.pixelSize: Style.space(11); color: Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.6) }
+                  Item { Layout.fillWidth: true }
+                  Text { text: (root.hardwareData.gpu ? root.hardwareData.gpu.temp_c : 0) + "°C"; font.bold: true; font.pixelSize: Style.space(12); color: "#34d399" }
+                }
+                Rectangle {
+                  Layout.fillWidth: true; height: Style.space(4); radius: 2; color: Qt.rgba(1, 1, 1, 0.15)
+                  Rectangle {
+                    width: parent.width * Math.max(0, Math.min(1, (root.hardwareData.gpu && root.hardwareData.gpu.total_mb > 0 ? root.hardwareData.gpu.used_mb / root.hardwareData.gpu.total_mb : 0)))
+                    height: parent.height; radius: 2; color: "#a855f7"
+                  }
+                }
+                Text {
+                  text: root.hardwareData.gpu ? (root.hardwareData.gpu.used_mb + " / " + root.hardwareData.gpu.total_mb + " MB (" + root.hardwareData.gpu.name.replace("NVIDIA GeForce ", "") + ")") : ""
+                  font.pixelSize: Style.space(9); elide: Text.ElideRight; color: Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.5)
+                }
+              }
+            }
+          }
+
+          // Memory Optimizer Action
+          Rectangle {
+            Layout.fillWidth: true
+            height: Style.space(46)
+            radius: Style.space(10)
+            color: root.glass
+            border.color: Qt.rgba(1, 1, 1, 0.1)
+            RowLayout {
+              anchors.fill: parent; anchors.margins: Style.space(10); spacing: Style.space(10)
+              Text { text: "⚡"; font.pixelSize: Style.font.body }
+              ColumnLayout { Layout.fillWidth: true; spacing: 0
+                Text { text: "Clean Caches & Optimize RAM"; font.weight: Font.DemiBold; font.pixelSize: Style.space(11); color: root.capsuleInk }
+                Text { text: "Flushes page caches & syncs dirty pages to disk"; font.pixelSize: Style.space(9); color: Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.5) } }
+              Controls.Button {
+                text: "Optimize"
+                onClicked: root.optimizeMemory()
+                background: Rectangle { radius: Style.space(6); color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.25) }
+                contentItem: Text { text: "Optimize"; font.pixelSize: Style.space(10); font.bold: true; color: root.capsuleInk }
+              }
+            }
+          }
+
+          Item { Layout.fillHeight: true }
+        }
+
+        // ================= TAB 5: SHELF & CLIPBOARD =================
         ColumnLayout {
           visible: root.activeTab === "shelf"
           Layout.fillWidth: true
@@ -1674,7 +2054,7 @@ Item {
           // Live Clipboard Card
           Rectangle {
             Layout.fillWidth: true
-            height: Style.space(110)
+            height: Style.space(100)
             radius: Style.space(12)
             color: root.glass
             border.color: Qt.rgba(1, 1, 1, 0.1)
@@ -1682,8 +2062,8 @@ Item {
 
             ColumnLayout {
               anchors.fill: parent
-              anchors.margins: Style.space(10)
-              spacing: Style.space(6)
+              anchors.margins: Style.space(8)
+              spacing: Style.space(4)
 
               RowLayout {
                 Layout.fillWidth: true
@@ -1703,7 +2083,6 @@ Item {
                 }
               }
 
-              // Image Clip Preview
               Image {
                 visible: root.clipboardData.type === "image" && root.clipboardData.image_path !== ""
                 Layout.fillWidth: true
@@ -1713,7 +2092,6 @@ Item {
                 asynchronous: true
               }
 
-              // Text Clip Preview
               Text {
                 visible: root.clipboardData.type === "text"
                 Layout.fillWidth: true
@@ -1726,7 +2104,6 @@ Item {
                 wrapMode: Text.WrapAtWordBoundaryOrAnywhere
               }
 
-              // Empty Clip Placeholder
               Text {
                 visible: root.clipboardData.type === "empty"
                 Layout.alignment: Qt.AlignCenter
@@ -1738,7 +2115,47 @@ Item {
             }
           }
 
-          // Scratchpad Note
+          // Recent Screenshots
+          Text {
+            text: "Recent Screenshots"
+            font.family: Style.font.family
+            font.pixelSize: Style.space(11)
+            font.weight: Font.DemiBold
+            color: root.capsuleInk
+          }
+
+          RowLayout {
+            Layout.fillWidth: true
+            spacing: Style.space(6)
+            Repeater {
+              model: root.recentScreenshots
+              Rectangle {
+                id: shotThumbCard
+                required property var modelData
+                Layout.fillWidth: true
+                height: Style.space(48)
+                radius: Style.space(8)
+                color: root.glass
+                border.color: Qt.rgba(1, 1, 1, 0.1)
+                clip: true
+
+                Image {
+                  anchors.fill: parent
+                  source: "file://" + shotThumbCard.modelData.path
+                  fillMode: Image.PreserveAspectCrop
+                  asynchronous: true
+                }
+
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.openFile(shotThumbCard.modelData.path)
+                }
+              }
+            }
+          }
+
+          // Scratchpad
           Text {
             text: "Island Scratchpad (Auto-saved)"
             font.family: Style.font.family
@@ -1750,7 +2167,7 @@ Item {
           Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            radius: Style.space(12)
+            radius: Style.space(10)
             color: root.glass
             border.color: Qt.rgba(1, 1, 1, 0.1)
 
@@ -1766,7 +2183,7 @@ Item {
                 color: root.capsuleInk
                 placeholderTextColor: Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.4)
                 font.family: Style.font.family
-                font.pixelSize: Style.space(12)
+                font.pixelSize: Style.space(11)
                 wrapMode: Text.Wrap
                 selectByMouse: true
                 background: null
@@ -1779,33 +2196,33 @@ Item {
           }
         }
 
-        // ================= TAB 5: CONTROLS & DESK =================
+        // ================= TAB 6: SYSTEM & CONTROLS =================
         ColumnLayout {
-          visible: root.activeTab === "controls"
+          visible: root.activeTab === "system"
           Layout.fillWidth: true
           Layout.fillHeight: true
-          spacing: Style.space(10)
+          spacing: Style.space(8)
 
           // 1. Audio Volume Slider Card
           Rectangle {
             Layout.fillWidth: true
-            height: Style.space(48)
-            radius: Style.space(10)
+            height: Style.space(44)
+            radius: Style.space(9)
             color: root.glass
             border.color: Qt.rgba(1, 1, 1, 0.1)
 
             RowLayout {
               anchors.fill: parent
-              anchors.margins: Style.space(10)
-              spacing: Style.space(10)
+              anchors.margins: Style.space(8)
+              spacing: Style.space(8)
 
               Rectangle {
-                width: Style.space(28); height: Style.space(28); radius: Style.space(7)
+                width: Style.space(26); height: Style.space(26); radius: Style.space(6)
                 color: root.systemMuted ? "#ef4444" : Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.2)
                 Text {
                   anchors.centerIn: parent
                   text: root.systemMuted ? "🔇" : root.systemVolume < 50 ? "🔉" : "🔊"
-                  font.pixelSize: Style.space(12)
+                  font.pixelSize: Style.space(11)
                 }
                 MouseArea {
                   anchors.fill: parent
@@ -1814,11 +2231,10 @@ Item {
                 }
               }
 
-              // Custom Draggable Volume Slider
               Rectangle {
                 id: volTrack
                 Layout.fillWidth: true
-                height: Style.space(8)
+                height: Style.space(6)
                 radius: height / 2
                 color: Qt.rgba(1, 1, 1, 0.14)
 
@@ -1860,31 +2276,26 @@ Item {
           // 2. Display Brightness Slider Card
           Rectangle {
             Layout.fillWidth: true
-            height: Style.space(48)
-            radius: Style.space(10)
+            height: Style.space(44)
+            radius: Style.space(9)
             color: root.glass
             border.color: Qt.rgba(1, 1, 1, 0.1)
 
             RowLayout {
               anchors.fill: parent
-              anchors.margins: Style.space(10)
-              spacing: Style.space(10)
+              anchors.margins: Style.space(8)
+              spacing: Style.space(8)
 
               Rectangle {
-                width: Style.space(28); height: Style.space(28); radius: Style.space(7)
+                width: Style.space(26); height: Style.space(26); radius: Style.space(6)
                 color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.2)
-                Text {
-                  anchors.centerIn: parent
-                  text: "☀️"
-                  font.pixelSize: Style.space(12)
-                }
+                Text { anchors.centerIn: parent; text: "☀️"; font.pixelSize: Style.space(11) }
               }
 
-              // Custom Draggable Brightness Slider
               Rectangle {
                 id: brightTrack
                 Layout.fillWidth: true
-                height: Style.space(8)
+                height: Style.space(6)
                 radius: height / 2
                 color: Qt.rgba(1, 1, 1, 0.14)
 
@@ -1923,30 +2334,65 @@ Item {
             }
           }
 
-          // 3. Workspaces Row
+          // 3. Top Position Presets (Flush 0px / Snug 2px / Floating 6px)
+          RowLayout {
+            Layout.fillWidth: true
+            spacing: Style.space(6)
+            Text {
+              text: "Position:"
+              font.pixelSize: Style.space(10)
+              color: Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.6)
+            }
+            Repeater {
+              model: [
+                { offset: 0, label: "Flush Bezel (0px)" },
+                { offset: 2, label: "Snug (2px)" },
+                { offset: 6, label: "Floating (6px)" }
+              ]
+              Controls.Button {
+                id: posPresetBtn
+                required property var modelData
+                Layout.fillWidth: true
+                text: posPresetBtn.modelData.label
+                onClicked: {
+                  root.topOffset = posPresetBtn.modelData.offset
+                  root.persistState()
+                }
+                background: Rectangle {
+                  radius: Style.space(6)
+                  color: root.topOffset === posPresetBtn.modelData.offset ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.25) : root.glass
+                  border.color: root.topOffset === posPresetBtn.modelData.offset ? root.accent : Qt.rgba(1, 1, 1, 0.1)
+                }
+                contentItem: Text { text: posPresetBtn.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.pixelSize: Style.space(10); color: root.capsuleInk }
+              }
+            }
+          }
+
+          // 4. Workspaces Row
           RowLayout {
             Layout.fillWidth: true
             spacing: Style.space(6)
             Repeater {
               model: Hyprland.workspaces.values
               Rectangle {
+                id: wsCard
                 required property var modelData
                 Layout.fillWidth: true
-                height: Style.space(34)
-                radius: Style.space(8)
-                color: modelData.focused ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.25) : root.glass
-                border.color: modelData.focused ? root.accent : Qt.rgba(1, 1, 1, 0.1)
+                height: Style.space(32)
+                radius: Style.space(7)
+                color: wsCard.modelData.focused ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.25) : root.glass
+                border.color: wsCard.modelData.focused ? root.accent : Qt.rgba(1, 1, 1, 0.1)
                 Column {
                   anchors.centerIn: parent; spacing: 1
-                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: parent.parent.modelData.name || String(parent.parent.modelData.id); font.family: Style.font.family; font.pixelSize: Style.font.caption; font.weight: Font.DemiBold; color: root.capsuleInk }
-                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: (parent.parent.modelData.toplevels ? parent.parent.modelData.toplevels.values.length : 0) + " win"; font.pixelSize: Style.space(8); color: Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.5) }
+                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: wsCard.modelData.name || String(wsCard.modelData.id); font.family: Style.font.family; font.pixelSize: Style.space(10); font.weight: Font.DemiBold; color: root.capsuleInk }
+                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: (wsCard.modelData.toplevels ? wsCard.modelData.toplevels.values.length : 0) + " win"; font.pixelSize: Style.space(8); color: Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.5) }
                 }
-                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { parent.modelData.activate(); root.isExpanded = false } }
+                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { wsCard.modelData.activate(); root.isExpanded = false } }
               }
             }
           }
 
-          // 4. Quick System Action Buttons
+          // 5. System Quick Actions
           RowLayout {
             Layout.fillWidth: true
             spacing: Style.space(6)
@@ -1955,43 +2401,43 @@ Item {
               Layout.fillWidth: true
               text: "▧ Wallpaper"
               onClicked: root.nextOmarchyBackground()
-              background: Rectangle { radius: Style.space(8); color: root.glass; border.color: Qt.rgba(1, 1, 1, 0.1) }
-              contentItem: Text { text: parent.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: Style.font.family; font.pixelSize: Style.space(11); color: root.capsuleInk }
+              background: Rectangle { radius: Style.space(7); color: root.glass; border.color: Qt.rgba(1, 1, 1, 0.1) }
+              contentItem: Text { text: parent.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: Style.font.family; font.pixelSize: Style.space(10); color: root.capsuleInk }
             }
             Controls.Button {
               Layout.fillWidth: true
               text: "◐ Theme"
               onClicked: root.openOmarchyThemeSwitcher()
-              background: Rectangle { radius: Style.space(8); color: root.glass; border.color: Qt.rgba(1, 1, 1, 0.1) }
-              contentItem: Text { text: parent.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: Style.font.family; font.pixelSize: Style.space(11); color: root.capsuleInk }
+              background: Rectangle { radius: Style.space(7); color: root.glass; border.color: Qt.rgba(1, 1, 1, 0.1) }
+              contentItem: Text { text: parent.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: Style.font.family; font.pixelSize: Style.space(10); color: root.capsuleInk }
             }
             Controls.Button {
               Layout.fillWidth: true
               text: "📸 Shot"
               onClicked: root.takeScreenshot()
-              background: Rectangle { radius: Style.space(8); color: root.glass; border.color: Qt.rgba(1, 1, 1, 0.1) }
-              contentItem: Text { text: parent.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: Style.font.family; font.pixelSize: Style.space(11); color: root.capsuleInk }
+              background: Rectangle { radius: Style.space(7); color: root.glass; border.color: Qt.rgba(1, 1, 1, 0.1) }
+              contentItem: Text { text: parent.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: Style.font.family; font.pixelSize: Style.space(10); color: root.capsuleInk }
             }
             Controls.Button {
               Layout.fillWidth: true
               text: root.nightlightEnabled ? "🌙 Night On" : "🌙 Night"
               onClicked: root.toggleNightlight()
-              background: Rectangle { radius: Style.space(8); color: root.nightlightEnabled ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.25) : root.glass; border.color: root.nightlightEnabled ? root.accent : Qt.rgba(1, 1, 1, 0.1) }
-              contentItem: Text { text: parent.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: Style.font.family; font.pixelSize: Style.space(11); color: root.capsuleInk }
+              background: Rectangle { radius: Style.space(7); color: root.nightlightEnabled ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.25) : root.glass; border.color: root.nightlightEnabled ? root.accent : Qt.rgba(1, 1, 1, 0.1) }
+              contentItem: Text { text: parent.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: Style.font.family; font.pixelSize: Style.space(10); color: root.capsuleInk }
             }
             Controls.Button {
               Layout.fillWidth: true
               text: root.idleEnabled ? "☕ Awake" : "☕ Sleep"
               onClicked: root.toggleIdle()
-              background: Rectangle { radius: Style.space(8); color: root.idleEnabled ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.25) : root.glass; border.color: root.idleEnabled ? root.accent : Qt.rgba(1, 1, 1, 0.1) }
-              contentItem: Text { text: parent.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: Style.font.family; font.pixelSize: Style.space(11); color: root.capsuleInk }
+              background: Rectangle { radius: Style.space(7); color: root.idleEnabled ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.25) : root.glass; border.color: root.idleEnabled ? root.accent : Qt.rgba(1, 1, 1, 0.1) }
+              contentItem: Text { text: parent.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: Style.font.family; font.pixelSize: Style.space(10); color: root.capsuleInk }
             }
             Controls.Button {
               Layout.fillWidth: true
               text: "🔒 Lock"
               onClicked: root.lockSession()
-              background: Rectangle { radius: Style.space(8); color: root.glass; border.color: Qt.rgba(1, 1, 1, 0.1) }
-              contentItem: Text { text: parent.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: Style.font.family; font.pixelSize: Style.space(11); color: root.capsuleInk }
+              background: Rectangle { radius: Style.space(7); color: root.glass; border.color: Qt.rgba(1, 1, 1, 0.1) }
+              contentItem: Text { text: parent.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: Style.font.family; font.pixelSize: Style.space(10); color: root.capsuleInk }
             }
           }
         }
@@ -2002,18 +2448,18 @@ Item {
     Rectangle {
       id: timerSatellite
       z: 2
-      visible: !root.isExpanded && !root.isPeeking && root.hasTrack && (root.timerActive || root.stopwatchVisible)
+      visible: !root.isExpanded && !root.isPeeking && root.agentPendingRequest === null && root.hasTrack && (root.timerActive || root.stopwatchVisible)
       anchors.left: morphCard.right
       anchors.leftMargin: Style.space(6)
-      y: Style.space(8)
+      y: root.topOffset
       width: Style.space(78)
       height: Style.space(34)
       radius: height / 2
 
       gradient: Gradient {
-        GradientStop { position: 0.0; color: "#1c1c20" }
-        GradientStop { position: 0.28; color: "#09090c" }
-        GradientStop { position: 1.0; color: "#030305" }
+        GradientStop { position: 0.0; color: "#18181c" }
+        GradientStop { position: 0.25; color: "#09090d" }
+        GradientStop { position: 1.0; color: "#020204" }
       }
       border.color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.55)
       border.width: 1
