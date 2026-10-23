@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.9.0
+
+- **Adaptive Top-Bar Clearance Detection:** Hyprland layer-shell scanning (`hyprctl -j layers`) automatically detects whether an Omarchy top bar, Waybar, or custom status bar is active at y=0. In `Auto` mode, the island smoothly clears below the top bar (+3px gap); when no top bar is present, it sits perfectly flush against the monitor's top bezel (0px).
+- **Position Presets with State Persistence:** Added interactive buttons in the Sys tab for `Auto (Bar Detect)`, `Flush (0px)`, `Snug (2px)`, and `Float (6px)`, auto-persisted in user state.
+- **Universal Multi-Machine Telemetry:**
+  - **Multi-Vendor GPU Support:** Native automatic detection for NVIDIA GPUs (`nvidia-smi`), AMD Radeon GPUs (`/sys/class/drm/card*` VRAM sysfs and hwmon thermals), Intel HD/Iris, and Integrated graphics with graceful fail-open fallbacks.
+  - **Desktop Workstation Mode:** When running on desktop PCs without battery, the compact resting pill displays real-time network traffic (`↓ 140K`) or online status instead of an unavailable battery icon.
+  - **Real-Time Network Bandwidth Meter:** Live download and upload throughput calculation directly from `/proc/net/dev` with non-blocking caching.
+  - **Root Storage Telemetry:** Live gauge of `/` disk space used, total capacity, and percentage with color-coded warning thresholds.
+- **Arch & Omarchy System Updates Monitor:** Background non-blocking update checking via `checkupdates` with an interactive `[Update Now]` action card.
+- **Trash Guard Cleaner:** Live item counter for `~/.local/share/Trash` with a 1-click `[Empty]` button in the Shelf tab.
+- **Quick Radios & Connectivity Controls:** Instant toggles for WiFi (`nmcli`) and Bluetooth (`bluetoothctl`) directly within the System tab.
+- **IPC Socket Commands:** Control the island from terminal, scripts, or Hyprland keybindings via `island-backend.sh toggle`, `expand [tab]`, `collapse`, and `peek <icon> <title> <sub>`.
+
 ## 2.8.0
 
 - **Flush Top-Bezel Notch Placement (0px Default):** Moved the island right up against the top screen bezel, eliminating the dark gap above the pill. Added an interactive position selector in Settings for `Flush Bezel (0px)`, `Snug (2px)`, and `Floating (6px)`.

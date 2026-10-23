@@ -17,7 +17,19 @@ Item {
   property bool isExpanded: false
   property bool isPeeking: false
   property string activeTab: "music"
-  property int topOffset: 0 // Default 0px: FLUSH with top screen bezel (no gap!)
+  property string positionMode: "auto" // "auto", "flush", "snug", "floating"
+  property int topOffset: 0
+  property int detectedTopBarHeight: 0
+
+  readonly property int effectiveTopOffset: {
+    if (positionMode === "flush") return 0
+    if (positionMode === "snug") return Style.space(2)
+    if (positionMode === "floating") return Style.space(6)
+    // "auto" mode:
+    // If top bar is detected (> 0), sit smoothly below it with an aesthetic 3px gap
+    // If no top bar exists (y=0, h=0), stay flush with top bezel (0px)
+    return detectedTopBarHeight > 0 ? (detectedTopBarHeight + Style.space(3)) : 0
+  }
 
   // Shell & Telemetry
   readonly property string scriptPath:
@@ -70,6 +82,14 @@ Item {
   })
   property var recentScreenshots: []
   property string clockLabel: Qt.formatTime(new Date(), "h:mm AP")
+
+  // Connectivity, Updates & Disk Telemetry
+  property var connectivityData: ({ wifi: true, bluetooth: false })
+  property int systemUpdatesCount: 0
+  property int trashItemsCount: 0
+  readonly property int netDownKb: hardwareData && hardwareData.net ? (Number(hardwareData.net.down_kb) || 0) : 0
+  readonly property int netUpKb: hardwareData && hardwareData.net ? (Number(hardwareData.net.up_kb) || 0) : 0
+  readonly property var diskData: hardwareData && hardwareData.disk ? hardwareData.disk : ({ used_mb: 0, total_mb: 0, pct: "0%" })
 
   // System Controls
   property int systemVolume: 50
@@ -244,7 +264,16 @@ Item {
     if (!line) return
     try {
       var msg = JSON.parse(line)
-      if (msg.event === "PermissionRequest") {
+      if (msg.cmd === "toggle" || msg.event === "toggle") {
+        root.isExpanded = !root.isExpanded
+      } else if (msg.cmd === "expand" || msg.event === "expand") {
+        if (msg.tab) root.activeTab = msg.tab
+        root.isExpanded = true
+      } else if (msg.cmd === "collapse" || msg.event === "collapse") {
+        root.isExpanded = false
+      } else if (msg.cmd === "peek" || msg.event === "peek") {
+        root.triggerPeek(msg.icon || "✨", msg.title || "Dynamic Island Pro", msg.subtitle || "", msg.target || "music", msg.duration || 2500)
+      } else if (msg.event === "PermissionRequest") {
         var reqId = msg.request || ("req-" + Date.now())
         sock.activeReqId = reqId
         root.agentPendingRequest = {
@@ -516,7 +545,8 @@ Item {
     stateTouched = true
     if (!stateReady) return
     stateFile.setText(JSON.stringify({
-      version: 6,
+      version: 7,
+      positionMode: positionMode,
       topOffset: topOffset,
       timerTotal: timerTotal,
       timerLeft: timerLeft,
@@ -540,6 +570,13 @@ Item {
     if (stateTouched) { persistState(); return }
     try {
       var saved = JSON.parse(stateFile.text() || "{}")
+      if (typeof saved.positionMode === "string") {
+        positionMode = saved.positionMode
+      } else if (typeof saved.topOffset === "number") {
+        if (saved.topOffset === 0) positionMode = "flush"
+        else if (saved.topOffset === 2) positionMode = "snug"
+        else if (saved.topOffset === 6) positionMode = "floating"
+      }
       if (typeof saved.topOffset === "number") topOffset = saved.topOffset
       timerTotal = Math.max(0, Number(saved.timerTotal) || 0)
       timerLeft = Math.max(0, Number(saved.timerLeft) || 0)
@@ -603,6 +640,38 @@ Item {
     Quickshell.execDetached(["bash", scriptPath, "stop-recording"])
     isRecording = false
     triggerPeek("🔴", "Recording Stopped", "Capture saved", "shelf", 2000)
+  }
+
+  function toggleWifi() {
+    Quickshell.execDetached(["bash", scriptPath, "toggle-wifi"])
+    connectivityData.wifi = !connectivityData.wifi
+    triggerPeek(connectivityData.wifi ? "📶" : "🚫", connectivityData.wifi ? "WiFi Enabled" : "WiFi Disabled", "", "system", 1800)
+    refreshTelemetry()
+  }
+
+  function toggleBluetooth() {
+    Quickshell.execDetached(["bash", scriptPath, "toggle-bluetooth"])
+    connectivityData.bluetooth = !connectivityData.bluetooth
+    triggerPeek(connectivityData.bluetooth ? "ᛒ" : "🚫", connectivityData.bluetooth ? "Bluetooth On" : "Bluetooth Off", "", "system", 1800)
+    refreshTelemetry()
+  }
+
+  function emptyTrash() {
+    Quickshell.execDetached(["bash", scriptPath, "empty-trash"])
+    trashItemsCount = 0
+    triggerPeek("🗑️", "Trash Cleaned", "Temporary items permanently deleted", "shelf", 2000)
+    refreshTelemetry()
+  }
+
+  function updateSystem() {
+    Quickshell.execDetached(["foot", "-e", "bash", "-c", "omarchy update || yay -Syu; exec bash"])
+    root.isExpanded = false
+  }
+
+  function checkUpdates() {
+    Quickshell.execDetached(["bash", scriptPath, "check-updates"])
+    triggerPeek("📦", "Checking Updates", "Refreshing package repositories...", "system", 1800)
+    refreshTelemetry()
   }
 
   function refreshTelemetry() {
@@ -709,9 +778,21 @@ Item {
           if (data.display) {
             root.systemBrightness = Number(data.display.brightness) || 50
           }
+          if (typeof data.top_bar_height === "number") {
+            root.detectedTopBarHeight = data.top_bar_height
+          }
           if (data.system) {
             root.nightlightEnabled = data.system.nightlight === true
             root.idleEnabled = data.system.idle === true
+            if (data.system.connectivity) {
+              root.connectivityData = data.system.connectivity
+            }
+            if (typeof data.system.updates === "number") {
+              root.systemUpdatesCount = data.system.updates
+            }
+            if (typeof data.system.trash === "number") {
+              root.trashItemsCount = data.system.trash
+            }
           }
           if (data.recording) {
             root.isRecording = data.recording.active === true
@@ -779,7 +860,8 @@ Item {
       id: morphCard
       z: 2
       anchors.horizontalCenter: parent.horizontalCenter
-      y: root.topOffset
+      y: root.effectiveTopOffset
+      Behavior on y { SpringAnimation { spring: 5.5; damping: 0.35 } }
 
       width: root.isExpanded
         ? Style.space(480)
@@ -825,7 +907,7 @@ Item {
       // Physical Specular Curved Glass Edge
       Rectangle {
         anchors.top: parent.top
-        anchors.topMargin: root.topOffset === 0 ? 0 : 1.2
+        anchors.topMargin: root.effectiveTopOffset === 0 ? 0 : 1.2
         anchors.horizontalCenter: parent.horizontalCenter
         width: Math.max(0, parent.width - Style.space(28))
         height: 1.2
@@ -1235,11 +1317,17 @@ Item {
           Row {
             spacing: Style.space(4)
             Text {
-              text: root.batteryStatus === "Charging" ? "⚡" : root.batteryPct <= 20 ? "🪫" : "🔋"
+              text: root.batteryAvailable
+                ? (root.batteryStatus === "Charging" ? "⚡" : root.batteryPct <= 20 ? "🪫" : "🔋")
+                : (root.netDownKb > 50 ? "⚡" : "🌐")
               font.pixelSize: Style.font.caption
             }
             Text {
-              text: root.batteryAvailable ? root.batteryPct + "%" : "Ready"
+              text: root.batteryAvailable
+                ? root.batteryPct + "%"
+                : (root.netDownKb > 0
+                  ? "↓ " + (root.netDownKb > 1024 ? Math.round(root.netDownKb / 102.4) / 10 + "M" : root.netDownKb + "K")
+                  : "Online")
               font.family: Style.font.family
               font.pixelSize: Style.space(11)
               font.weight: Font.Medium
@@ -2017,6 +2105,65 @@ Item {
                 }
               }
             }
+
+            // Network Traffic
+            Rectangle {
+              Layout.fillWidth: true
+              height: Style.space(64)
+              radius: Style.space(10)
+              color: root.glass
+              border.color: Qt.rgba(1, 1, 1, 0.1)
+              ColumnLayout {
+                anchors.fill: parent; anchors.margins: Style.space(8); spacing: Style.space(4)
+                RowLayout {
+                  Text { text: "🌐 Network Traffic"; font.family: Style.font.family; font.pixelSize: Style.space(11); color: Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.6) }
+                  Item { Layout.fillWidth: true }
+                  Text {
+                    text: root.netDownKb > 1024 ? (Math.round(root.netDownKb / 102.4) / 10 + " MB/s") : (root.netDownKb + " KB/s")
+                    font.bold: true; font.pixelSize: Style.space(12); color: "#06b6d4"
+                  }
+                }
+                Rectangle {
+                  Layout.fillWidth: true; height: Style.space(4); radius: 2; color: Qt.rgba(1, 1, 1, 0.15)
+                  Rectangle {
+                    width: parent.width * Math.max(0.04, Math.min(1, root.netDownKb / 5000))
+                    height: parent.height; radius: 2; color: "#06b6d4"
+                  }
+                }
+                Text {
+                  text: "↓ " + root.netDownKb + " KB/s  ·  ↑ " + root.netUpKb + " KB/s"
+                  font.pixelSize: Style.space(9); color: Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.5)
+                }
+              }
+            }
+
+            // Disk Storage
+            Rectangle {
+              Layout.fillWidth: true
+              height: Style.space(64)
+              radius: Style.space(10)
+              color: root.glass
+              border.color: Qt.rgba(1, 1, 1, 0.1)
+              ColumnLayout {
+                anchors.fill: parent; anchors.margins: Style.space(8); spacing: Style.space(4)
+                RowLayout {
+                  Text { text: "💽 Root Storage"; font.family: Style.font.family; font.pixelSize: Style.space(11); color: Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.6) }
+                  Item { Layout.fillWidth: true }
+                  Text { text: String(root.diskData.pct || "0%"); font.bold: true; font.pixelSize: Style.space(12); color: root.capsuleInk }
+                }
+                Rectangle {
+                  Layout.fillWidth: true; height: Style.space(4); radius: 2; color: Qt.rgba(1, 1, 1, 0.15)
+                  Rectangle {
+                    width: parent.width * Math.max(0, Math.min(1, (parseInt(root.diskData.pct) || 0) / 100))
+                    height: parent.height; radius: 2; color: (parseInt(root.diskData.pct) || 0) > 90 ? "#ef4444" : "#10b981"
+                  }
+                }
+                Text {
+                  text: Math.round(Number(root.diskData.used_mb || 0) / 1024) + " / " + Math.round(Number(root.diskData.total_mb || 0) / 1024) + " GB (" + (root.diskData.pct || "0%") + " used)"
+                  font.pixelSize: Style.space(9); color: Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.5)
+                }
+              }
+            }
           }
 
           // Memory Optimizer Action
@@ -2111,6 +2258,47 @@ Item {
                 font.family: Style.font.family
                 font.pixelSize: Style.space(11)
                 color: Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.4)
+              }
+            }
+          }
+
+          // Trash Guard Banner
+          Rectangle {
+            Layout.fillWidth: true
+            height: Style.space(34)
+            radius: Style.space(8)
+            color: root.glass
+            border.color: Qt.rgba(1, 1, 1, 0.1)
+
+            RowLayout {
+              anchors.fill: parent
+              anchors.leftMargin: Style.space(10)
+              anchors.rightMargin: Style.space(10)
+              spacing: Style.space(8)
+
+              Text {
+                text: root.trashItemsCount > 0 ? "🗑️" : "✨"
+                font.pixelSize: Style.space(12)
+              }
+              Text {
+                Layout.fillWidth: true
+                text: root.trashItemsCount > 0
+                  ? root.trashItemsCount + " item" + (root.trashItemsCount === 1 ? "" : "s") + " in Trash"
+                  : "Trash is clean"
+                font.family: Style.font.family
+                font.pixelSize: Style.space(11)
+                color: Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.7)
+              }
+              Controls.Button {
+                visible: root.trashItemsCount > 0
+                text: "Empty"
+                onClicked: root.emptyTrash()
+                background: Rectangle {
+                  radius: Style.space(5)
+                  color: Qt.rgba(0.94, 0.27, 0.27, 0.2)
+                  border.color: "#ef4444"
+                }
+                contentItem: Text { text: "Empty"; font.pixelSize: Style.space(9); font.bold: true; color: "#fca5a5" }
               }
             }
           }
@@ -2334,7 +2522,7 @@ Item {
             }
           }
 
-          // 3. Top Position Presets (Flush 0px / Snug 2px / Floating 6px)
+          // 3. Top Position Presets (Auto / Flush 0px / Snug 2px / Floating 6px)
           RowLayout {
             Layout.fillWidth: true
             spacing: Style.space(6)
@@ -2345,9 +2533,10 @@ Item {
             }
             Repeater {
               model: [
-                { offset: 0, label: "Flush Bezel (0px)" },
-                { offset: 2, label: "Snug (2px)" },
-                { offset: 6, label: "Floating (6px)" }
+                { mode: "auto", label: "Auto (Bar Detect)" },
+                { mode: "flush", label: "Flush (0px)" },
+                { mode: "snug", label: "Snug (2px)" },
+                { mode: "floating", label: "Float (6px)" }
               ]
               Controls.Button {
                 id: posPresetBtn
@@ -2355,20 +2544,69 @@ Item {
                 Layout.fillWidth: true
                 text: posPresetBtn.modelData.label
                 onClicked: {
-                  root.topOffset = posPresetBtn.modelData.offset
+                  root.positionMode = posPresetBtn.modelData.mode
                   root.persistState()
                 }
                 background: Rectangle {
                   radius: Style.space(6)
-                  color: root.topOffset === posPresetBtn.modelData.offset ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.25) : root.glass
-                  border.color: root.topOffset === posPresetBtn.modelData.offset ? root.accent : Qt.rgba(1, 1, 1, 0.1)
+                  color: root.positionMode === posPresetBtn.modelData.mode ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.25) : root.glass
+                  border.color: root.positionMode === posPresetBtn.modelData.mode ? root.accent : Qt.rgba(1, 1, 1, 0.1)
                 }
-                contentItem: Text { text: posPresetBtn.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.pixelSize: Style.space(10); color: root.capsuleInk }
+                contentItem: Text { text: posPresetBtn.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.pixelSize: Style.space(9); font.weight: root.positionMode === posPresetBtn.modelData.mode ? Font.DemiBold : Font.Normal; color: root.capsuleInk }
               }
             }
           }
 
-          // 4. Workspaces Row
+          // 4. System Updates Banner
+          Rectangle {
+            Layout.fillWidth: true
+            height: Style.space(32)
+            radius: Style.space(7)
+            color: root.systemUpdatesCount > 0 ? Qt.rgba(0.96, 0.62, 0.04, 0.12) : root.glass
+            border.color: root.systemUpdatesCount > 0 ? "#f59e0b" : Qt.rgba(1, 1, 1, 0.1)
+
+            RowLayout {
+              anchors.fill: parent
+              anchors.leftMargin: Style.space(8)
+              anchors.rightMargin: Style.space(8)
+              spacing: Style.space(6)
+
+              Text {
+                text: root.systemUpdatesCount > 0 ? "📦" : "✨"
+                font.pixelSize: Style.space(11)
+              }
+              Text {
+                Layout.fillWidth: true
+                text: root.systemUpdatesCount > 0
+                  ? root.systemUpdatesCount + " System Update" + (root.systemUpdatesCount === 1 ? "" : "s") + " Available"
+                  : "Arch & Omarchy Packages Up to Date"
+                font.family: Style.font.family
+                font.pixelSize: Style.space(10)
+                font.weight: root.systemUpdatesCount > 0 ? Font.DemiBold : Font.Normal
+                color: root.systemUpdatesCount > 0 ? "#fbbf24" : Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.7)
+              }
+              Controls.Button {
+                visible: root.systemUpdatesCount > 0
+                text: "Update Now"
+                onClicked: root.updateSystem()
+                background: Rectangle {
+                  radius: Style.space(5)
+                  color: Qt.rgba(0.96, 0.62, 0.04, 0.25)
+                  border.color: "#f59e0b"
+                }
+                contentItem: Text { text: "Update Now"; font.pixelSize: Style.space(9); font.bold: true; color: "#fef08a" }
+              }
+              Controls.Button {
+                visible: root.systemUpdatesCount === 0
+                text: "Check"
+                onClicked: root.checkUpdates()
+                background: Rectangle { radius: Style.space(5); color: Qt.rgba(1, 1, 1, 0.08) }
+                contentItem: Text { text: "Check"; font.pixelSize: Style.space(9); color: root.capsuleInk }
+              }
+            }
+          }
+
+          // 5. Workspaces Row
           RowLayout {
             Layout.fillWidth: true
             spacing: Style.space(6)
@@ -2392,7 +2630,53 @@ Item {
             }
           }
 
-          // 5. System Quick Actions
+          // 6. Connectivity & Hardware Radios Row
+          RowLayout {
+            Layout.fillWidth: true
+            spacing: Style.space(6)
+
+            Controls.Button {
+              Layout.fillWidth: true
+              text: root.connectivityData.wifi ? "📶 WiFi On" : "📶 WiFi Off"
+              onClicked: root.toggleWifi()
+              background: Rectangle {
+                radius: Style.space(7)
+                color: root.connectivityData.wifi ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.22) : root.glass
+                border.color: root.connectivityData.wifi ? root.accent : Qt.rgba(1, 1, 1, 0.1)
+              }
+              contentItem: Text { text: parent.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: Style.font.family; font.pixelSize: Style.space(10); color: root.capsuleInk }
+            }
+
+            Controls.Button {
+              Layout.fillWidth: true
+              text: root.connectivityData.bluetooth ? "ᛒ BT On" : "ᛒ BT Off"
+              onClicked: root.toggleBluetooth()
+              background: Rectangle {
+                radius: Style.space(7)
+                color: root.connectivityData.bluetooth ? Qt.rgba(0.22, 0.55, 0.95, 0.22) : root.glass
+                border.color: root.connectivityData.bluetooth ? "#3b82f6" : Qt.rgba(1, 1, 1, 0.1)
+              }
+              contentItem: Text { text: parent.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: Style.font.family; font.pixelSize: Style.space(10); color: root.capsuleInk }
+            }
+
+            Controls.Button {
+              Layout.fillWidth: true
+              text: root.nightlightEnabled ? "🌙 Night On" : "🌙 Night"
+              onClicked: root.toggleNightlight()
+              background: Rectangle { radius: Style.space(7); color: root.nightlightEnabled ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.25) : root.glass; border.color: root.nightlightEnabled ? root.accent : Qt.rgba(1, 1, 1, 0.1) }
+              contentItem: Text { text: parent.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: Style.font.family; font.pixelSize: Style.space(10); color: root.capsuleInk }
+            }
+
+            Controls.Button {
+              Layout.fillWidth: true
+              text: root.idleEnabled ? "☕ Awake" : "☕ Sleep"
+              onClicked: root.toggleIdle()
+              background: Rectangle { radius: Style.space(7); color: root.idleEnabled ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.25) : root.glass; border.color: root.idleEnabled ? root.accent : Qt.rgba(1, 1, 1, 0.1) }
+              contentItem: Text { text: parent.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: Style.font.family; font.pixelSize: Style.space(10); color: root.capsuleInk }
+            }
+          }
+
+          // 7. System Desktop Quick Actions
           RowLayout {
             Layout.fillWidth: true
             spacing: Style.space(6)
@@ -2420,20 +2704,6 @@ Item {
             }
             Controls.Button {
               Layout.fillWidth: true
-              text: root.nightlightEnabled ? "🌙 Night On" : "🌙 Night"
-              onClicked: root.toggleNightlight()
-              background: Rectangle { radius: Style.space(7); color: root.nightlightEnabled ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.25) : root.glass; border.color: root.nightlightEnabled ? root.accent : Qt.rgba(1, 1, 1, 0.1) }
-              contentItem: Text { text: parent.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: Style.font.family; font.pixelSize: Style.space(10); color: root.capsuleInk }
-            }
-            Controls.Button {
-              Layout.fillWidth: true
-              text: root.idleEnabled ? "☕ Awake" : "☕ Sleep"
-              onClicked: root.toggleIdle()
-              background: Rectangle { radius: Style.space(7); color: root.idleEnabled ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.25) : root.glass; border.color: root.idleEnabled ? root.accent : Qt.rgba(1, 1, 1, 0.1) }
-              contentItem: Text { text: parent.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: Style.font.family; font.pixelSize: Style.space(10); color: root.capsuleInk }
-            }
-            Controls.Button {
-              Layout.fillWidth: true
               text: "🔒 Lock"
               onClicked: root.lockSession()
               background: Rectangle { radius: Style.space(7); color: root.glass; border.color: Qt.rgba(1, 1, 1, 0.1) }
@@ -2451,7 +2721,8 @@ Item {
       visible: !root.isExpanded && !root.isPeeking && root.agentPendingRequest === null && root.hasTrack && (root.timerActive || root.stopwatchVisible)
       anchors.left: morphCard.right
       anchors.leftMargin: Style.space(6)
-      y: root.topOffset
+      y: root.effectiveTopOffset
+      Behavior on y { SpringAnimation { spring: 5.5; damping: 0.35 } }
       width: Style.space(78)
       height: Style.space(34)
       radius: height / 2

@@ -1,10 +1,36 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Dynamic Island Pro Backend: Telemetry, Media, Hardware, Audio, Display, Agents & Shelf
+# Dynamic Island Pro Backend: Universal Telemetry, Multi-Machine Hardware, Media, Network, Audio & Agents
 
 playerctl_call() {
   command -v playerctl >/dev/null 2>&1 || return 127
   timeout 1s playerctl "$@"
+}
+
+get_top_bar_height() {
+  local h=0
+  if command -v hyprctl >/dev/null 2>&1; then
+    h=$(python3 -c '
+import subprocess, json
+out = subprocess.run(["hyprctl", "-j", "layers"], capture_output=True, text=True)
+top_h = 0
+try:
+    data = json.loads(out.stdout)
+    for mon, levels in data.items():
+        for lvl_name, layers in levels.get("levels", {}).items():
+            for l in layers:
+                ns = l.get("namespace", "")
+                if any(k in ns for k in ["bar", "waybar", "omarchy-bar"]):
+                    y = l.get("y", 0)
+                    h = l.get("h", 0)
+                    if y == 0 and h > 0 and h < 100:
+                        top_h = max(top_h, h)
+except Exception:
+    pass
+print(top_h)
+' 2>/dev/null || echo 0)
+  fi
+  echo "$h"
 }
 
 get_volume_info() {
@@ -58,9 +84,63 @@ get_clipboard_info() {
     '{ type: $type, text: $text, image_path: $img }'
 }
 
+get_gpu_info() {
+  local name="Integrated Graphics" used=0 total=0 temp=0
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    local raw
+    if raw=$(nvidia-smi --query-gpu=name,memory.used,memory.total,temperature.gpu --format=csv,noheader,nounits 2>/dev/null); then
+      IFS=',' read -r g_name g_used g_total g_temp <<< "$raw"
+      name=$(echo "${g_name:-None}" | xargs)
+      used=$(echo "${g_used:-0}" | xargs)
+      total=$(echo "${g_total:-0}" | xargs)
+      temp=$(echo "${g_temp:-0}" | xargs)
+      echo "$name|$used|$total|$temp"
+      return
+    fi
+  fi
+  # AMD Radeon fallback
+  for card in /sys/class/drm/card[0-9]; do
+    if [[ -f "$card/device/gpu_busy_percent" ]]; then
+      name="AMD Radeon Graphics"
+      if [[ -f "$card/device/hwmon/hwmon*/temp1_input" ]]; then
+        temp=$(( $(cat "$card/device/hwmon/hwmon*/temp1_input" 2>/dev/null | head -n1 || echo 0) / 1000 ))
+      fi
+      if [[ -f "$card/device/mem_info_vram_used" && -f "$card/device/mem_info_vram_total" ]]; then
+        used=$(( $(cat "$card/device/mem_info_vram_used" 2>/dev/null || echo 0) / 1048576 ))
+        total=$(( $(cat "$card/device/mem_info_vram_total" 2>/dev/null || echo 0) / 1048576 ))
+      fi
+      echo "$name|$used|$total|$temp"
+      return
+    fi
+  done
+  echo "$name|$used|$total|$temp"
+}
+
+get_net_speed() {
+  local rx1 tx1
+  read -r rx1 tx1 < <(awk 'NR>2 && $1 !~ /(lo|docker|veth|virbr|br-)/ {rx+=$2; tx+=$10} END {print rx+0, tx+0}' /proc/net/dev 2>/dev/null || echo "0 0")
+  local state_file="/tmp/dynamic-island-net-prev.txt"
+  local now
+  now=$(date +%s%N)
+  local down_kb=0 up_kb=0
+  if [[ -f "$state_file" ]]; then
+    read -r prev_time prev_rx prev_tx < "$state_file" || true
+    if [[ -n "${prev_time:-}" && -n "${prev_rx:-}" && -n "${prev_tx:-}" ]]; then
+      local elapsed_ns=$(( now - prev_time ))
+      if (( elapsed_ns > 400000000 && elapsed_ns < 30000000000 )); then
+        down_kb=$(( ((rx1 - prev_rx) * 1000000000 / elapsed_ns) / 1024 ))
+        up_kb=$(( ((tx1 - prev_tx) * 1000000000 / elapsed_ns) / 1024 ))
+        (( down_kb < 0 )) && down_kb=0
+        (( up_kb < 0 )) && up_kb=0
+      fi
+    fi
+  fi
+  echo "$now $rx1 $tx1" > "$state_file"
+  echo "$down_kb $up_kb"
+}
+
 get_hardware_info() {
   local cpu_pct ram_used=0 ram_total=0 ram_pct=0 swap_used=0 swap_total=0 swap_pct=0
-  local gpu_name="None" gpu_vram_used=0 gpu_vram_total=0 gpu_temp=0
 
   cpu_pct=$(top -bn1 | grep '%Cpu' | awk '{printf "%.0f", $2}' 2>/dev/null || echo 0)
 
@@ -69,15 +149,15 @@ get_hardware_info() {
     read -r swap_used swap_total swap_pct < <(free -m 2>/dev/null | awk '/Swap:/ {printf "%d %d %.0f\n", $3, $2, ($2>0?($3/$2)*100:0)}')
   fi
 
-  if command -v nvidia-smi >/dev/null 2>&1; then
-    local gpu_raw
-    gpu_raw=$(nvidia-smi --query-gpu=name,memory.used,memory.total,temperature.gpu --format=csv,noheader,nounits 2>/dev/null || echo "None,0,0,0")
-    IFS=',' read -r g_name g_used g_total g_temp <<< "$gpu_raw"
-    gpu_name=$(echo "${g_name:-None}" | xargs)
-    gpu_vram_used=$(echo "${g_used:-0}" | xargs)
-    gpu_vram_total=$(echo "${g_total:-0}" | xargs)
-    gpu_temp=$(echo "${g_temp:-0}" | xargs)
-  fi
+  local gpu_raw gpu_name gpu_vram_used gpu_vram_total gpu_temp
+  gpu_raw=$(get_gpu_info)
+  IFS='|' read -r gpu_name gpu_vram_used gpu_vram_total gpu_temp <<< "$gpu_raw"
+
+  local down_kb up_kb
+  read -r down_kb up_kb < <(get_net_speed)
+
+  local disk_used=0 disk_total=0 disk_pct="0%"
+  read -r disk_used disk_total disk_pct < <(df -m / 2>/dev/null | awk 'NR==2 {printf "%d %d %s\n", $3, $2, $5}' || echo "0 0 0%")
 
   jq -n \
     --argjson cpu "$cpu_pct" \
@@ -91,11 +171,18 @@ get_hardware_info() {
     --argjson gpu_used "$gpu_vram_used" \
     --argjson gpu_total "$gpu_vram_total" \
     --argjson gpu_temp "$gpu_temp" \
+    --argjson net_down "$down_kb" \
+    --argjson net_up "$up_kb" \
+    --argjson disk_used "$disk_used" \
+    --argjson disk_total "$disk_total" \
+    --arg disk_pct "$disk_pct" \
     '{
       cpu: { pct: $cpu },
       ram: { used_mb: $ram_used, total_mb: $ram_total, pct: $ram_pct },
       swap: { used_mb: $swap_used, total_mb: $swap_total, pct: $swap_pct },
-      gpu: { name: $gpu_name, used_mb: $gpu_used, total_mb: $gpu_total, temp_c: $gpu_temp }
+      gpu: { name: $gpu_name, used_mb: $gpu_used, total_mb: $gpu_total, temp_c: $gpu_temp },
+      net: { down_kb: $net_down, up_kb: $net_up },
+      disk: { used_mb: $disk_used, total_mb: $disk_total, pct: $disk_pct }
     }'
 }
 
@@ -112,6 +199,50 @@ shots = sorted(glob.glob(os.path.join(dir, "*.png")), key=os.path.getmtime, reve
 result = [{"path": s, "name": os.path.basename(s)} for s in shots]
 print(json.dumps(result))
 ' 2>/dev/null || echo "[]"
+}
+
+get_connectivity() {
+  local wifi_on=false bt_on=false
+  if command -v nmcli >/dev/null 2>&1; then
+    [[ "$(nmcli -t -f WIFI g 2>/dev/null || true)" == "enabled" ]] && wifi_on=true
+  fi
+  if command -v bluetoothctl >/dev/null 2>&1; then
+    bluetoothctl show 2>/dev/null | grep -qi "Powered: yes" && bt_on=true
+  fi
+  jq -n --argjson wifi "$wifi_on" --argjson bt "$bt_on" '{ wifi: $wifi, bluetooth: $bt }'
+}
+
+get_updates_count() {
+  local cache_file="/tmp/dynamic-island-updates.txt"
+  local count=0
+  if [[ -f "$cache_file" ]]; then
+    count=$(head -n 1 "$cache_file" 2>/dev/null || echo 0)
+    [[ "$count" =~ ^[0-9]+$ ]] || count=0
+  fi
+  local now
+  now=$(date +%s)
+  local mtime=0
+  [[ -f "$cache_file" ]] && mtime=$(stat -c %Y "$cache_file" 2>/dev/null || echo 0)
+  if (( now - mtime > 1800 )); then
+    (
+      touch "$cache_file"
+      local c=0
+      if command -v checkupdates >/dev/null 2>&1; then
+        c=$(checkupdates 2>/dev/null | wc -l || echo 0)
+      fi
+      echo "$c" > "$cache_file"
+    ) &
+  fi
+  echo "$count"
+}
+
+get_trash_info() {
+  local trash_dir="${XDG_DATA_HOME:-$HOME/.local/share}/Trash/files"
+  local c=0
+  if [[ -d "$trash_dir" ]]; then
+    c=$(ls -1 "$trash_dir" 2>/dev/null | wc -l || echo 0)
+  fi
+  echo "$c"
 }
 
 get_state() {
@@ -169,9 +300,19 @@ get_state() {
     bat_pct=$((battery_total / battery_count))
   fi
 
+  # Top Bar Detection
+  local top_bar_height
+  top_bar_height=$(get_top_bar_height)
+
   # Audio & Display Telemetry
   read -r vol_pct vol_muted < <(get_volume_info)
   disp_brightness=$(get_brightness_info)
+
+  # Connectivity, Updates & Trash
+  local conn_json updates_count trash_count
+  conn_json=$(get_connectivity)
+  updates_count=$(get_updates_count)
+  trash_count=$(get_trash_info)
 
   # System Toggles (Night light & Idle)
   local night_enabled=false idle_enabled=false
@@ -183,7 +324,7 @@ get_state() {
     idle_enabled=$(jq -r '.enabled // false' <<<"$idle_json")
   fi
 
-  # AI Agents & Local Models Telemetry
+  # AI Agents & Multi-Provider Local Models Telemetry
   local antigravity_available=false
   local antigravity_active=false
   local claude_available=false
@@ -205,16 +346,15 @@ get_state() {
     command -v codex >/dev/null 2>&1 && codex_available=true
     if pgrep -f "codex" >/dev/null 2>&1; then codex_active=true; fi
 
-    # Local model router / llama-swap detection & model list
-    if systemctl --user is-active dsh-local-model-router >/dev/null 2>&1 || pgrep -f "llama-swap|llama.cpp" >/dev/null 2>&1; then
+    # Scan local model endpoints (llama-swap :18080, ollama :11434, vllm :8000, local-ai :8080)
+    if curl -s --max-time 0.5 http://127.0.0.1:18080/v1/models >/dev/null 2>&1; then
       local_models_available=true
       local_models_active=true
-      local_models_list=$(curl -s --max-time 1 http://127.0.0.1:18080/v1/models 2>/dev/null | jq -c '[.data[]? | {id: .id, name: .name, status: (.status.value // "unloaded")}]' 2>/dev/null || echo "[]")
-    elif command -v ollama >/dev/null 2>&1; then
+      local_models_list=$(curl -s --max-time 0.8 http://127.0.0.1:18080/v1/models 2>/dev/null | jq -c '[.data[]? | {id: .id, name: .name, status: (.status.value // "unloaded")}]' 2>/dev/null || echo "[]")
+    elif curl -s --max-time 0.5 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
       local_models_available=true
-      if systemctl --user is-active ollama >/dev/null 2>&1 || pgrep -x "ollama" >/dev/null 2>&1; then
-        local_models_active=true
-      fi
+      local_models_active=true
+      local_models_list=$(curl -s --max-time 0.8 http://127.0.0.1:11434/api/tags 2>/dev/null | jq -c '[.models[]? | {id: .name, name: .name, status: "loaded"}]' 2>/dev/null || echo "[]")
     fi
 
     # Screen recording detection
@@ -240,11 +380,15 @@ get_state() {
     --arg bat_status "$bat_status" \
     --argjson bat_pct "$bat_pct" \
     --argjson battery_available "$battery_available" \
+    --argjson top_bar_height "$top_bar_height" \
     --argjson vol_pct "$vol_pct" \
     --argjson vol_muted "$vol_muted" \
     --argjson disp_brightness "$disp_brightness" \
     --argjson night_enabled "$night_enabled" \
     --argjson idle_enabled "$idle_enabled" \
+    --argjson connectivity "$conn_json" \
+    --argjson updates_count "$updates_count" \
+    --argjson trash_count "$trash_count" \
     --argjson antigravity_available "$antigravity_available" \
     --argjson antigravity_active "$antigravity_active" \
     --argjson claude_available "$claude_available" \
@@ -273,6 +417,7 @@ get_state() {
         status: $bat_status,
         pct: $bat_pct
       },
+      top_bar_height: $top_bar_height,
       audio: {
         volume: $vol_pct,
         muted: $vol_muted
@@ -282,7 +427,10 @@ get_state() {
       },
       system: {
         nightlight: $night_enabled,
-        idle: $idle_enabled
+        idle: $idle_enabled,
+        connectivity: $connectivity,
+        updates: $updates_count,
+        trash: $trash_count
       },
       recording: {
         active: $recording_active
@@ -308,8 +456,7 @@ get_state() {
         local_models: {
           available: $local_models_available,
           active: $local_models_active,
-          name: "Local Models (Bonsai 2 / llama-swap)",
-          endpoint: "http://127.0.0.1:18080",
+          name: "Local Models",
           models: $local_models_list
         }
       },
@@ -355,6 +502,27 @@ case "$cmd" in
     fi
     get_state false
     ;;
+  toggle-wifi)
+    if command -v nmcli >/dev/null 2>&1; then
+      cur=$(nmcli -t -f WIFI g 2>/dev/null || echo "enabled")
+      if [[ "$cur" == "enabled" ]]; then
+        nmcli radio wifi off 2>/dev/null || true
+      else
+        nmcli radio wifi on 2>/dev/null || true
+      fi
+    fi
+    get_state false
+    ;;
+  toggle-bluetooth)
+    if command -v bluetoothctl >/dev/null 2>&1; then
+      if bluetoothctl show 2>/dev/null | grep -qi "Powered: yes"; then
+        bluetoothctl power off 2>/dev/null || true
+      else
+        bluetoothctl power on 2>/dev/null || true
+      fi
+    fi
+    get_state false
+    ;;
   toggle-nightlight)
     if command -v omarchy >/dev/null 2>&1; then
       omarchy toggle nightlight >/dev/null 2>&1 || true
@@ -370,6 +538,36 @@ case "$cmd" in
   optimize-memory)
     sync
     echo '{"optimized": true}'
+    ;;
+  toggle|expand|collapse)
+    sock="${XDG_RUNTIME_DIR:-/tmp}/dynamic-island/agents.sock"
+    tab="${2:-}"
+    if [[ -S "$sock" ]]; then
+      python3 -c "import socket, json; s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.connect('$sock'); s.sendall((json.dumps({'cmd': '$cmd', 'tab': '$tab'}) + '\n').encode()); s.close()" 2>/dev/null || true
+    fi
+    echo "{\"cmd\":\"$cmd\",\"status\":\"ok\"}"
+    ;;
+  peek)
+    sock="${XDG_RUNTIME_DIR:-/tmp}/dynamic-island/agents.sock"
+    icon="${2:-✨}"
+    title="${3:-Dynamic Island Pro}"
+    sub="${4:-}"
+    target="${5:-music}"
+    if [[ -S "$sock" ]]; then
+      python3 -c "import socket, json; s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.connect('$sock'); s.sendall((json.dumps({'cmd': 'peek', 'icon': '$icon', 'title': '$title', 'subtitle': '$sub', 'target': '$target'}) + '\n').encode()); s.close()" 2>/dev/null || true
+    fi
+    echo '{"peeked": true}'
+    ;;
+  empty-trash)
+    rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/Trash/files/"* 2>/dev/null || true
+    rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/Trash/info/"* 2>/dev/null || true
+    get_state false
+    ;;
+  check-updates)
+    if command -v checkupdates >/dev/null 2>&1; then
+      checkupdates 2>/dev/null | wc -l > /tmp/dynamic-island-updates.txt || true
+    fi
+    get_state false
     ;;
   stop-recording)
     killall -INT wf-recorder wl-screenrec obs 2>/dev/null || true

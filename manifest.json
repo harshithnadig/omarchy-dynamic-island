@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "harshith.dynamic-island",
   "name": "Dynamic Island Pro",
-  "version": "2.8.0",
+  "version": "2.9.0",
   "author": "Harshith Nadig",
   "license": "MIT",
-  "description": "Ultra-fluid Apple-grade Dynamic Island for Omarchy featuring flush top-bezel notch placement, live hardware health telemetry (CPU/RAM/Swap/GPU VRAM), interactive AI Agent Permission Interceptor socket, real-time Cava audio visualizer, spring-morphed Peek banners, physical alert shake physics, Quick Volume/Brightness sliders, and persistent Shelf.",
+  "description": "Ultra-fluid Apple-grade Dynamic Island for Omarchy featuring adaptive top-bar clearance detection, universal multi-machine hardware telemetry (multi-vendor NVIDIA/AMD/Intel GPU, live network bandwidth, root storage), Arch & Omarchy system updates monitor, 1-click trash cleaner, interactive AI Agent Permission Interceptor socket, real-time Cava audio visualizer, spring-morphed Peek banners, physical alert shake physics, Quick Radios/Volume/Brightness controls, and persistent Shelf.",
   "kinds": [
     "service"
   ],

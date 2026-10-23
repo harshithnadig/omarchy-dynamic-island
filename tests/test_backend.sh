@@ -12,10 +12,18 @@ jq -e '
   (.audio.muted | type == "boolean") and
   (.display.brightness | type == "number") and
   (.recording.active | type == "boolean") and
+  (.top_bar_height | type == "number") and
+  (.system.connectivity.wifi | type == "boolean") and
+  (.system.connectivity.bluetooth | type == "boolean") and
+  (.system.updates | type == "number") and
+  (.system.trash | type == "number") and
   (.hardware.cpu.pct | type == "number") and
   (.hardware.ram.pct | type == "number") and
   (.hardware.swap.pct | type == "number") and
   (.hardware.gpu.name | type == "string") and
+  (.hardware.net.down_kb | type == "number") and
+  (.hardware.net.up_kb | type == "number") and
+  (.hardware.disk.used_mb | type == "number") and
   (.screenshots | type == "array") and
   (.agents.antigravity.available | type == "boolean") and
   (.agents.claude_code.available | type == "boolean") and

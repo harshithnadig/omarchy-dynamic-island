@@ -12,8 +12,9 @@ An Apple-style **Liquid Glass Dynamic Island** positioned at the top-center of y
 
 ## ✨ Features
 
-### 🏝️ Flush Top-Bezel Notch & Fluid Elastic Physics
-- **Flush Top-Bezel Placement (0px default):** Nestled seamlessly against the top bezel without awkward gaps, with customizable position presets (`Flush 0px`, `Snug 2px`, `Floating 6px`).
+### 🏝️ Adaptive Top-Bar Clearance & Fluid Elastic Physics
+- **Adaptive Top-Bar Clearance (Auto Detect):** Intelligently inspects the Hyprland layer-shell stack (`hyprctl -j layers`). If an Omarchy top bar, Waybar, or panel is active at $y=0$, the island automatically drops right below it (+3px gap). When no top bar exists, it stays flush against the monitor bezel (0px).
+- **Position Presets with State Persistence:** Choose between `Auto (Bar Detect)`, `Flush (0px)`, `Snug (2px)`, and `Float (6px)` right from the Sys tab, persisted automatically across reboots.
 - **Interactive Press & Elastic Hover:** Physical spring scale feedback (`pressScale: 0.95` on press, `1.02` on hover) with organic spring damping.
 - **Organic In-Place Spring Morphing:** Morphs smoothly between Resting Pill (34px) $\rightarrow$ Notification Peek Banner (42px) $\rightarrow$ Full Liquid Glass Card (480×480px).
 - **Physical Shake & Dip Physics:** Sinusoidal damped oscillation (`shakeX`) and vertical bounce (`bounceY`) that physically shakes the island when focus sessions complete or alerts fire.
@@ -21,16 +22,21 @@ An Apple-style **Liquid Glass Dynamic Island** positioned at the top-center of y
 
 ### 🤖 AI Agents Studio & Interactive Permission Interceptor
 - **Permission Request Interceptor:** Native Quickshell `SocketServer` listening at `$XDG_RUNTIME_DIR/dynamic-island/agents.sock` that intercepts tool `PermissionRequest` events from Claude Code, Codex CLI, and Google Antigravity, popping open an interactive banner with `[ ✓ Allow ]` and `[ ✗ Deny ]` buttons right on the island.
-- **Local Models Browser (`llama-swap :18080`):** Connects to the local model router, displaying 11 available models (**Ternary Bonsai 2 27B**, **Gemma 4 12B**, **Granite 4.2 8B**, **Qwen 2.5 Coder**) with 1-click terminal chat/test.
+- **Local Models Browser (`llama-swap :18080`, Ollama, vLLM):** Connects to the local model router, displaying installed models (**Ternary Bonsai 2 27B**, **Gemma 4 12B**, **Granite 4.2 8B**, **Qwen 2.5 Coder**) with 1-click terminal chat/test.
 - **Quick Prompt Launcher:** Type a prompt directly into the island and launch with your favorite coding agent.
 
-### 📊 Live Hardware Health Capsule (CPU, RAM, Swap & GPU VRAM)
+### 📊 Universal Multi-Machine Hardware Telemetry (CPU, RAM, Swap, Multi-Vendor GPU, Net & Disk)
+- **Universal Multi-Vendor GPU Support:** Native automatic detection for NVIDIA GPUs (`nvidia-smi`), AMD Radeon GPUs (`/sys/class/drm/card*` VRAM sysfs and hwmon thermals), Intel HD/Iris, and Integrated graphics with fail-open safety.
+- **Desktop Workstation Mode:** When running on desktop PCs without battery, the compact resting pill displays real-time network traffic (`↓ 140K`) or online status instead of an unavailable battery icon.
+- **Real-Time Network Bandwidth Meter:** Live download and upload throughput calculation directly from `/proc/net/dev` with non-blocking caching.
+- **Root Storage Telemetry:** Live gauge of `/` disk space used, total capacity, and percentage with color-coded warning thresholds.
 - **Live Performance Telemetry:**
   - **CPU %** with visual load bar
   - **Memory (RAM):** Used / Total GB and percentage with high-memory alert color (>85%)
   - **Swap Memory:** Used / Total GB and percentage
-  - **NVIDIA GPU VRAM & Temperature:** Real-time VRAM allocation and thermals (°C)
+  - **GPU VRAM & Temperature:** Real-time VRAM allocation and thermals (°C)
 - **⚡ Memory Optimizer:** 1-click button to flush page caches, drop caches, and sync memory to disk.
+- **📦 Arch & Omarchy Updates Monitor:** Background update checking via `checkupdates` with an interactive `[Update Now]` terminal launcher.
 
 ### 🔔 Apple-Grade Notification Peek Banners
 - **Live System Peeking:** The island springs open into an elegant notification banner for ~2.6s upon:
@@ -39,7 +45,7 @@ An Apple-style **Liquid Glass Dynamic Island** positioned at the top-center of y
   - AI Agent events & permission requests
   - Focus session completion
   - Wallpaper changes & screenshot captures
-  - System toggles (Night Light, Caffeine)
+  - System toggles (WiFi, Bluetooth, Night Light, Caffeine)
 - **1-Click Deep Navigation:** Clicking any peek banner morphs directly into that feature's expanded tab.
 
 ### 🎵 Real-Time Cava Audio Spectrum & MPRIS Control
@@ -48,9 +54,10 @@ An Apple-style **Liquid Glass Dynamic Island** positioned at the top-center of y
 - **Universal Album Artwork & Vinyl Disc:** Smooth artwork loading from local paths, `file://`, and `http(s)://`, with a rotating vinyl record fallback.
 - **Interactive Seek Bar & Multi-Player Chips:** Scrubber bar with timestamps, plus quick chips to switch between Spotify, Firefox, MPV, etc.
 
-### 🎛️ Quick Sliders & System Control
+### 🎛️ Quick Sliders, Radios & System Control
 - **Interactive Audio Volume Slider:** Draggable volume slider with mute toggle and exact percentage readout.
 - **Interactive Display Brightness Slider:** Draggable brightness slider (0–100%).
+- **Quick Radios Controls:** 1-click toggles for 📶 WiFi (`nmcli`) and ᛒ Bluetooth (`bluetoothctl`).
 - **Hyprland Workspaces & Windows:** Visual workspace switcher chips and open window list with 1-click focus.
 - **Quick Action Bar:**
   - ▧ **Wallpaper:** Cycle background (`omarchy theme bg next`)
@@ -60,7 +67,8 @@ An Apple-style **Liquid Glass Dynamic Island** positioned at the top-center of y
   - ☕ **Caffeine:** Stay awake toggle (`omarchy toggle idle`)
   - 🔒 **Lock:** Instant lock session (`loginctl lock-session`)
 
-### 📋 Shelf, Screenshots & Persistent Scratchpad
+### 📋 Shelf, Trash Guard & Persistent Scratchpad
+- **Trash Guard Cleaner:** Live item counter for `~/.local/share/Trash` with a 1-click `[Empty]` button.
 - **Live Clipboard Preview:** Shows copied text snippet or full image thumbnail with 1-click "Copy Again" and "Clear" buttons.
 - **Recent Screenshots Gallery:** Interactive thumbnail strip of the 4 latest screenshots with 1-click open.
 - **Auto-Saved Scratchpad:** Persistent multi-line notepad for draft prompts, code snippets, or thoughts that survives shell reboots.
@@ -81,6 +89,23 @@ An Apple-style **Liquid Glass Dynamic Island** positioned at the top-center of y
 | **Cycle Players** | Right-Click on capsule |
 | **Volume HUD** | Mouse Wheel Up / Down over capsule |
 | **Dismiss Card** | Press `Escape` or click outside the card |
+
+### ⌨️ Terminal & Hyprland Keybindings IPC
+
+Bind in `~/.config/hypr/hyprland.conf`:
+
+```ini
+# Toggle Dynamic Island with Super + I
+bind = $mainMod, I, exec, ~/.config/omarchy/plugins/harshith.dynamic-island/island-backend.sh toggle
+```
+
+Available backend verbs:
+- `island-backend.sh toggle`: Toggle expanded command center
+- `island-backend.sh expand [music|focus|agents|stats|shelf|system]`: Open directly to tab
+- `island-backend.sh collapse`: Close expanded card
+- `island-backend.sh peek <icon> <title> [subtitle] [target_tab]`: Trigger dynamic peek banner
+- `island-backend.sh empty-trash`: Clean trash instantly
+- `island-backend.sh toggle-wifi` / `toggle-bluetooth`: Instant radio switches
 
 ---
 

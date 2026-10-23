@@ -17,7 +17,7 @@ Scope {
 
       screen: modelData
       anchors { top: true; left: true; right: true }
-      implicitHeight: core.item && core.item.isExpanded ? Style.space(520) : Style.space(64)
+      implicitHeight: core.item && core.item.isExpanded ? Style.space(560) : Style.space(90)
       color: "transparent"
       exclusionMode: ExclusionMode.Ignore
       WlrLayershell.namespace: "harshith-dynamic-island"
