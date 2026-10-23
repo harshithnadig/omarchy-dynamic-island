@@ -2,28 +2,16 @@
   "schemaVersion": 1,
   "id": "harshith.dynamic-island",
   "name": "Dynamic Island Pro",
-  "version": "1.0.0",
-  "author": "Dynamic Island Contributors",
+  "version": "2.6.0",
+  "author": "Harshith Nadig",
   "license": "MIT",
-  "description": "macOS-style Liquid Glass Dynamic Island for Omarchy: fluid spring morphing, media metadata and controls, battery telemetry, and optional local-agent availability.",
+  "description": "Apple-style top-center Dynamic Island with dancing audio equalizer, native MPRIS media player, Focus Studio & timers, AI Agents Hub, and Hyprland desk controls.",
   "kinds": [
-    "bar-widget"
+    "service"
   ],
   "entryPoints": {
-    "barWidget": "BarWidget.qml"
+    "service": "Service.qml"
   },
-  "barWidget": {
-    "displayName": "Dynamic Island Pro",
-    "description": "Liquid Glass morphing Dynamic Island with dancing audio visualizer and AI agent status.",
-    "category": "Appearance",
-    "aliases": [
-      "dynamic-island",
-      "island",
-      "liquid",
-      "glass",
-      "media"
-    ],
-    "allowMultiple": false,
-    "defaultSection": "center"
-  }
+  "icon": "assets/icon.svg",
+  "homepage": "https://github.com/harshithnadig/omarchy-dynamic-island"
 }

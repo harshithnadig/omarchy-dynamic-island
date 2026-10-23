@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="islandBg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1e1e24" />
+      <stop offset="35%" stop-color="#0a0a0d" />
+      <stop offset="100%" stop-color="#020204" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="50%" stop-color="#818cf8" />
+      <stop offset="100%" stop-color="#c084fc" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background Base -->
+  <rect width="128" height="128" rx="28" fill="#0d0e12" />
+
+  <!-- Top Reveal Subtle Sensor -->
+  <rect x="44" y="8" width="40" height="3" rx="1.5" fill="#ffffff" opacity="0.2" />
+
+  <!-- Dynamic Island Main Capsule -->
+  <rect x="18" y="24" width="92" height="42" rx="21" fill="url(#islandBg)" stroke="url(#accentGrad)" stroke-width="1.8" filter="url(#glow)" />
+  <rect x="22" y="26" width="84" height="1" rx="0.5" fill="#ffffff" opacity="0.35" />
+
+  <!-- Music Artwork Thumbnail / Note -->
+  <circle cx="39" cy="45" r="11" fill="url(#accentGrad)" opacity="0.25" />
+  <circle cx="39" cy="45" r="6" fill="#020204" />
+  <circle cx="39" cy="45" r="2.5" fill="url(#accentGrad)" />
+
+  <!-- Equalizer Waveform Bars -->
+  <rect x="74" y="38" width="3" height="14" rx="1.5" fill="url(#accentGrad)" />
+  <rect x="80" y="34" width="3" height="22" rx="1.5" fill="url(#accentGrad)" />
+  <rect x="86" y="40" width="3" height="10" rx="1.5" fill="url(#accentGrad)" />
+  <rect x="92" y="36" width="3" height="18" rx="1.5" fill="url(#accentGrad)" />
+
+  <!-- Timer Satellite Bubble -->
+  <rect x="34" y="78" width="60" height="26" rx="13" fill="url(#islandBg)" stroke="rgba(255,255,255,0.18)" stroke-width="1.2" />
+  <text x="64" y="95" fill="#f8fafc" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="600" text-anchor="middle">25:00</text>
+  <circle cx="44" cy="91" r="3" fill="#38bdf8" />
+</svg>

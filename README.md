@@ -1,65 +1,100 @@
-# 🏝️ Dynamic Island Pro for Omarchy
+# Dynamic Island Pro for Omarchy
 
-## Marketplace installation and review notes
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Omarchy Quattro](https://img.shields.io/badge/Omarchy-Quattro-8b5cf6.svg)](https://omarchy.org)
+[![Quickshell](https://img.shields.io/badge/Quickshell-0.3.2+-38bdf8.svg)](https://quickshell.outfoxxed.me)
 
-This section describes the current implementation and takes precedence over broader feature claims below.
+An Apple-style **Liquid Glass Dynamic Island** positioned at the top-center of your screen for **Omarchy** and **Hyprland**. It reveals seamlessly on hover or stays gracefully alive whenever media is playing, a timer is active, or screen recording is underway.
 
-### Requirements and dependencies
-
-Requires Omarchy Quattro's plugin-capable shell, Qt 6 / QtQuick / QtQuick.Controls / QtQuick.Layouts, Quickshell and Omarchy qs.Commons / qs.Ui modules. This is not a standalone QML application.
-
-Bash, jq, playerctl, GNU coreutils and an MPRIS-compatible media player. Battery data is read from available Linux `/sys/class/power_supply/BAT*` devices. Local album art is displayed from `file://` URLs; remote art URLs are not fetched.
-
-### Install
-
-Review the unsandboxed plugin source, then run in an Omarchy Quattro session:
-
-    omarchy plugin add https://github.com/harshithnadig/omarchy-dynamic-island.git --enable
-
-Use the Omarchy bar editor to place the widget if necessary. Installation fetches upstream HEAD, not a pinned marketplace-reviewed snapshot.
-
-### Remove
-
-    omarchy plugin remove harshith.dynamic-island
-
-### Permissions and persistent state
-
-Reads media metadata and battery state. Media buttons invoke playerctl on explicit clicks. Album-art URLs, when supplied by a media player, remain optional metadata. The agent tile only reports whether `agy` or `claude` is discoverable; it does not execute or modify agent configuration.
-
-### Current limitations
-
-Waveform animation is decorative, not measured audio levels. The agent tile
-reports executable availability, not session health or permission state. When
-no supported battery is present, the panel shows unavailable rather than a
-synthetic percentage.
-
-Repository structure and documentation were reviewed for resubmission. This is not a fresh end-to-end runtime test or security audit.
-
-### License
-
-MIT; see LICENSE. External applications, models and dependencies retain their own licenses.
-
----
-
-**Dynamic Island Pro** brings a macOS-style Liquid Glass morphing Dynamic Island with dancing audio equalizer waveforms, live media controls, and AI agent status cards directly into **Omarchy** and **Hyprland**.
+![Dynamic Island Pro Icon](assets/icon.svg)
 
 ---
 
 ## ✨ Features
 
-- 🏝️ **Liquid Glass Morphing Capsule:** Physics-based spring animations that expand and contract dynamically.
-- 📊 **Animated Audio Indicator:** 4-bar animation signals active playback in the capsule.
-- 💿 **Album Art & Media Controls:** 1-click popout with local album art previews, a rotating vinyl fallback, play/pause, and skip buttons. Player commands have a one-second timeout so a stalled media service cannot block the bar indefinitely.
-- 🤖 **AI Agent Status Bridge:** Integrated status for Google Antigravity and Claude Code sessions.
-- 🔋 **Live Battery Telemetry:** Charging vitals and percentage.
+### 🏝️ Top-Center Morphing Liquid Glass Island
+- **True Physical Physics:** Fluid spring animations (mass, damping, stiffness) that smoothly expand, morph, and contract across states.
+- **Smart Reveal & Pinning:** Hover the subtle top-edge sensor to reveal the island instantly, or let it stay dynamically visible when media, timers, or recordings are active. Toggle **Pin Island** to keep it pinned 24/7.
+- **Transparent Click-Through Layer:** Input is strictly constrained to the island hit area and sensor; the rest of your screen remains 100% click-through.
+
+### 🎵 High-Fidelity MPRIS Media & Equalizer
+- **Dancing 4-Bar Audio Equalizer:** Real-time animated audio visualizer waves that dance smoothly to playback and gently settle on pause.
+- **Universal Album Artwork:** Full support for `file://`, absolute local paths, and remote `http(s)://` art URLs (Spotify, Zen Twilight, Chromium, mpv, etc.).
+- **Rotating Vinyl Fallback:** Sleek spinning vinyl record animation when album art is unavailable or loading.
+- **Seek Scrubber:** Interactive progress line with click-to-seek and duration timestamps.
+- **Scroll Volume HUD:** Scroll anywhere over the island capsule to adjust volume, complete with an inline physical volume gauge and percentage readout.
+- **Multi-Player Selector:** Automatically tracks active playback, or click chips to lock to a specific player. Right-click the island pill to cycle players on the fly.
+
+### ⏱️ Focus Studio & Persistent Timers
+- **Focus & Deep Work Presets:** 1-click presets for **Focus (25m)**, **Deep Work (50m)**, **Short Break (5m)**, and **Long Break (15m)** with custom session labels.
+- **Audio Completion Chimes:** Plays a soothing completion chime via `canberra-gtk-play` and sends desktop notifications when sessions end.
+- **Splitting Satellite Bubbles:** When a timer or stopwatch is active, the island splits into satellites so both media and timer remain visible side-by-side.
+- **Persistent State:** Timer deadline, remaining time, stopwatch, and session counts survive Quickshell restarts and system reboots.
+
+### 🤖 AI Agents & Local Models Hub
+- **Status Dashboard:** Live cards and active session indicators for:
+  - **Google Antigravity** (CLI & IDE)
+  - **Claude Code**
+  - **Codex CLI**
+  - **Local Models Router** (Bonsai 2 27B / llama-swap / Ollama on port 18080)
+- **1-Click Launchers:** Summon terminal sessions or inspect local model endpoints directly from the island panel.
+
+### 🖥️ Hyprland Desk & System Control
+- **Workspace Switcher:** Visual workspace occupancy grid with 1-click workspace switching and window counts.
+- **Window Switcher:** Real-time list of open windows on the active workspace; click any window to bring it to front and focus.
+- **Quick System Actions:**
+  - ▧ **Next Wallpaper:** Cycle Omarchy desktop backgrounds (`omarchy theme bg next`).
+  - ◐ **Theme Switcher:** Summon Omarchy theme picker (`omarchy theme switcher`).
+  - 📸 **Screenshot:** Launch native Wayland screenshot overlay (`omarchy-capture-screenshot`).
+  - 📌 **Pin Toggle:** Keep island pinned always or auto-collapse when idle.
 
 ---
 
-## 🚀 Installation
+## 🎮 Gestures & Shortcuts
 
-Enable via Omarchy Plugin Manager:
-```bash
-omarchy plugin enable harshith.dynamic-island
+| Action | Gesture |
+|---|---|
+| **Open Panel** | Left-Click on main capsule |
+| **Play / Pause** | Middle-Click on capsule or hover quick-button |
+| **Cycle Players** | Right-Click on capsule |
+| **Adjust Volume** | Mouse Wheel Up / Down over capsule |
+| **Adjust Timer** | Mouse Wheel Up / Down over timer satellite (±1 min) |
+| **Cycle Workspaces** | Mouse Wheel Up / Down over workspace satellite |
+| **Quick Focus (25m)**| Left-Click on the expanded `25m` satellite |
+| **Dismiss Panel** | Press `Escape` or click outside |
+
+---
+
+## 📦 Installation
+
+To install or update Dynamic Island Pro in your Omarchy shell:
+
+```sh
+omarchy plugin add https://github.com/harshithnadig/omarchy-dynamic-island.git --enable
 ```
 
-The expanded media panel includes a live playback timeline with elapsed and total time. Drag it to seek in the active MPRIS player; players that do not expose duration or seeking leave the timeline disabled.
+To validate the plugin manifest:
+
+```sh
+omarchy plugin validate ~/.config/omarchy/plugins/harshith.dynamic-island
+```
+
+To remove the plugin:
+
+```sh
+omarchy plugin remove harshith.dynamic-island
+```
+
+---
+
+## 📋 Requirements
+
+- **Omarchy Quattro** with **Quickshell 0.3.2+**
+- Standard system tools: `bash`, `jq`, `playerctl` (optional diagnostic fallback), `canberra-gtk-play` (for timer chimes)
+- Hyprland Wayland Compositor
+
+---
+
+## 📄 License
+
+MIT License. Copyright (c) Harshith Nadig. See [LICENSE](LICENSE) for details.
