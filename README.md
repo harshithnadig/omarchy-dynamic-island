@@ -4,7 +4,7 @@
 [![Omarchy Quattro](https://img.shields.io/badge/Omarchy-Quattro-8b5cf6.svg)](https://omarchy.org)
 [![Quickshell](https://img.shields.io/badge/Quickshell-0.3.2+-38bdf8.svg)](https://quickshell.outfoxxed.me)
 
-An Apple-style **Liquid Glass Dynamic Island** positioned at the top-center of your screen for **Omarchy** and **Hyprland**. It reveals seamlessly on hover or stays gracefully alive whenever media is playing, a timer is active, or screen recording is underway.
+An Apple-style **Liquid Glass Dynamic Island** positioned at the top-center of your screen for **Omarchy** and **Hyprland**. Resting permanently as a sleek top-center pill that morphs organically in place, peeks fluidly on notifications, dances to live audio with Cava, shakes on alerts, and expands into a unified command center.
 
 ![Dynamic Island Pro Icon](assets/icon.svg)
 
@@ -12,41 +12,52 @@ An Apple-style **Liquid Glass Dynamic Island** positioned at the top-center of y
 
 ## ✨ Features
 
-### 🏝️ Top-Center Morphing Liquid Glass Island
-- **True Physical Physics:** Fluid spring animations (mass, damping, stiffness) that smoothly expand, morph, and contract across states.
-- **Smart Reveal & Pinning:** Hover the subtle top-edge sensor to reveal the island instantly, or let it stay dynamically visible when media, timers, or recordings are active. Toggle **Pin Island** to keep it pinned 24/7.
-- **Transparent Click-Through Layer:** Input is strictly constrained to the island hit area and sensor; the rest of your screen remains 100% click-through.
+### 🏝️ True In-Place Morphing & Fluid Spring Physics
+- **Permanent Top-Center Resting Pill:** Sits elegantly at the top-center of your screen (34px height) without taking screen estate or blocking underlying windows.
+- **Organic In-Place Spring Morphing:** Morphs smoothly between Resting Pill (34px) $\rightarrow$ Notification Peek Banner (42px) $\rightarrow$ Full Liquid Glass Card (480×480px).
+- **Physical Shake & Dip Physics:** Sinusoidal damped oscillation (`shakeX`) and vertical bounce (`bounceY`) that physically shakes the island when focus sessions complete or alerts fire.
+- **100% Click-Through Masking:** All desktop space outside the island is completely transparent and click-through.
 
-### 🎵 High-Fidelity MPRIS Media & Equalizer
-- **Dancing 4-Bar Audio Equalizer:** Real-time animated audio visualizer waves that dance smoothly to playback and gently settle on pause.
-- **Universal Album Artwork:** Full support for `file://`, absolute local paths, and remote `http(s)://` art URLs (Spotify, Zen Twilight, Chromium, mpv, etc.).
-- **Rotating Vinyl Fallback:** Sleek spinning vinyl record animation when album art is unavailable or loading.
-- **Seek Scrubber:** Interactive progress line with click-to-seek and duration timestamps.
-- **Scroll Volume HUD:** Scroll anywhere over the island capsule to adjust volume, complete with an inline physical volume gauge and percentage readout.
-- **Multi-Player Selector:** Automatically tracks active playback, or click chips to lock to a specific player. Right-click the island pill to cycle players on the fly.
+### 🔔 Apple-Grade Notification Peek Banners
+- **Live System Peeking:** The island springs open into an elegant notification banner for ~2.6s upon:
+  - Track changes (song title, artist, art thumbnail)
+  - Charger connected (`⚡ AC Power Connected`) or disconnected (`🔋 Running on Battery`)
+  - Focus session completion
+  - Wallpaper changes & screenshot captures
+  - System toggles (Night Light, Caffeine)
+- **1-Click Deep Navigation:** Clicking any peek banner morphs directly into that feature's expanded tab.
 
-### ⏱️ Focus Studio & Persistent Timers
-- **Focus & Deep Work Presets:** 1-click presets for **Focus (25m)**, **Deep Work (50m)**, **Short Break (5m)**, and **Long Break (15m)** with custom session labels.
-- **Audio Completion Chimes:** Plays a soothing completion chime via `canberra-gtk-play` and sends desktop notifications when sessions end.
-- **Splitting Satellite Bubbles:** When a timer or stopwatch is active, the island splits into satellites so both media and timer remain visible side-by-side.
-- **Persistent State:** Timer deadline, remaining time, stopwatch, and session counts survive Quickshell restarts and system reboots.
+### 🎵 Real-Time Cava Audio Spectrum & MPRIS Control
+- **True PipeWire Cava Visualizer:** 4-bar dancing equalizer tuned to live audio frequency spectrum via Cava, with graceful fallback animation.
+- **Bass-Reactive Dynamic Ambient Glow:** Backlight halo pulses organically with audio loudness and kicks on bass drops.
+- **Universal Album Artwork & Vinyl Disc:** Smooth artwork loading from local paths, `file://`, and `http(s)://`, with a rotating vinyl record fallback.
+- **Interactive Seek Bar & Multi-Player Chips:** Scrubber bar with timestamps, plus quick chips to switch between Spotify, Firefox, MPV, etc.
 
-### 🤖 AI Agents & Local Models Hub
-- **Status Dashboard:** Live cards and active session indicators for:
-  - **Google Antigravity** (CLI & IDE)
-  - **Claude Code**
-  - **Codex CLI**
-  - **Local Models Router** (Bonsai 2 27B / llama-swap / Ollama on port 18080)
-- **1-Click Launchers:** Summon terminal sessions or inspect local model endpoints directly from the island panel.
+### 🎛️ Quick Sliders & System Control
+- **Interactive Audio Volume Slider:** Draggable volume slider with mute toggle and exact percentage readout.
+- **Interactive Display Brightness Slider:** Draggable brightness slider (0–100%).
+- **Hyprland Workspaces & Windows:** Visual workspace switcher chips and open window list with 1-click focus.
+- **Quick Action Bar:**
+  - ▧ **Wallpaper:** Cycle background (`omarchy theme bg next`)
+  - ◐ **Theme:** Open theme switcher (`omarchy theme switcher`)
+  - 📸 **Screenshot:** Wayland screenshot capture (`omarchy screenshot`)
+  - 🌙 **Night Light:** Toggle color temperature (`omarchy toggle nightlight`)
+  - ☕ **Caffeine:** Stay awake toggle (`omarchy toggle idle`)
+  - 🔒 **Lock:** Instant lock session (`loginctl lock-session`)
 
-### 🖥️ Hyprland Desk & System Control
-- **Workspace Switcher:** Visual workspace occupancy grid with 1-click workspace switching and window counts.
-- **Window Switcher:** Real-time list of open windows on the active workspace; click any window to bring it to front and focus.
-- **Quick System Actions:**
-  - ▧ **Next Wallpaper:** Cycle Omarchy desktop backgrounds (`omarchy theme bg next`).
-  - ◐ **Theme Switcher:** Summon Omarchy theme picker (`omarchy theme switcher`).
-  - 📸 **Screenshot:** Launch native Wayland screenshot overlay (`omarchy-capture-screenshot`).
-  - 📌 **Pin Toggle:** Keep island pinned always or auto-collapse when idle.
+### 🤖 AI Agents & Local Models Hub (Bonsai 2 / llama-swap)
+- **Session Telemetry:** Live detection of running turns for **Google Antigravity**, **Claude Code**, and **Codex CLI**.
+- **Local Models Browser:** Connects to `llama-swap` on `127.0.0.1:18080`, enumerating 11 available models (including **Ternary Bonsai 2 27B**, **Gemma 4 12B**, **Granite 4.2 8B**, **Qwen 2.5 Coder**) with 1-click terminal chat/test.
+- **Quick Prompt Launcher:** Type a prompt directly into the island and launch with your favorite coding agent.
+
+### 📋 Shelf & Persistent Scratchpad
+- **Live Clipboard Preview:** Shows copied text snippet or full image thumbnail with 1-click "Copy Again" and "Clear" buttons.
+- **Auto-Saved Scratchpad:** Persistent multi-line notepad for draft prompts, code snippets, or thoughts that survives shell reboots.
+
+### ⏱️ Focus Studio & Splitting Satellite
+- **Focus & Deep Work Presets:** 1-click timers (25m Focus, 50m Deep, 5m Break, 15m Long) with custom session names.
+- **Audible Chimes:** Completion chime via `canberra-gtk-play`.
+- **Splitting Satellite Bubble:** Shows timer or stopwatch alongside music without cluttering the main pill.
 
 ---
 
@@ -54,44 +65,33 @@ An Apple-style **Liquid Glass Dynamic Island** positioned at the top-center of y
 
 | Action | Gesture |
 |---|---|
-| **Open Panel** | Left-Click on main capsule |
-| **Play / Pause** | Middle-Click on capsule or hover quick-button |
+| **Open Card** | Left-Click on resting pill or peek banner |
+| **Play / Pause** | Middle-Click on capsule |
 | **Cycle Players** | Right-Click on capsule |
-| **Adjust Volume** | Mouse Wheel Up / Down over capsule |
-| **Adjust Timer** | Mouse Wheel Up / Down over timer satellite (±1 min) |
-| **Cycle Workspaces** | Mouse Wheel Up / Down over workspace satellite |
-| **Quick Focus (25m)**| Left-Click on the expanded `25m` satellite |
-| **Dismiss Panel** | Press `Escape` or click outside |
+| **Volume HUD** | Mouse Wheel Up / Down over capsule |
+| **Dismiss Card** | Press `Escape` or click outside the card |
 
 ---
 
-## 📦 Installation
+## 📦 Installation & Verification
 
-To install or update Dynamic Island Pro in your Omarchy shell:
+To install or update in Omarchy:
 
 ```sh
 omarchy plugin add https://github.com/harshithnadig/omarchy-dynamic-island.git --enable
 ```
 
-To validate the plugin manifest:
+Validate the plugin:
 
 ```sh
 omarchy plugin validate ~/.config/omarchy/plugins/harshith.dynamic-island
 ```
 
-To remove the plugin:
+Run test suite:
 
 ```sh
-omarchy plugin remove harshith.dynamic-island
+~/.config/omarchy/plugins/harshith.dynamic-island/tests/test_backend.sh
 ```
-
----
-
-## 📋 Requirements
-
-- **Omarchy Quattro** with **Quickshell 0.3.2+**
-- Standard system tools: `bash`, `jq`, `playerctl` (optional diagnostic fallback), `canberra-gtk-play` (for timer chimes)
-- Hyprland Wayland Compositor
 
 ---
 

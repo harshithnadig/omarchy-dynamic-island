@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.7.0
+
+- **Real-Time PipeWire Cava Visualizer:** Integrated PipeWire audio spectrum monitoring via `cava` in stdout mode, feeding 4 live frequency bands into the compact equalizer bars.
+- **Dynamic Bass-Reactive Ambient Halo:** The ambient backlight behind the island pulses organically with audio loudness and kicks on bass drops.
+- **Apple-Grade Notification Peek Banners:** The resting pill morphs open into an elegant notification banner (42px) upon track changes, AC charger connect/disconnect, timer completion, and system toggles, auto-dismissing after 2.6s.
+- **Physical Shake & Bounce Physics:** Added sinusoidal horizontal spring oscillation (`shakeX`) and vertical alert dip (`bounceY`) when focus sessions complete or alerts fire.
+- **Quick Sliders in Expanded Card:** Added interactive draggable sliders for system volume (with mute toggle) and display brightness (0–100%).
+- **AI Studio Supercharge & Local Models:** Added a live browser for `llama-swap` on `127.0.0.1:18080` listing 11 local models (Ternary Bonsai 2 27B, Gemma 4 12B, Granite 4.2 8B, Qwen 2.5 Coder, etc.) with 1-click test/chat, plus a Quick Prompt Launcher bar.
+- **Shelf & Persistent Scratchpad:** Added live clipboard preview for copied text and images (with 1-click copy/clear) and an auto-saved persistent scratchpad.
+- **Quick System Toggles:** Added one-click toggles for Night Light (`omarchy toggle nightlight`), Caffeine/Stay Awake (`omarchy toggle idle`), and Lock Session (`loginctl lock-session`).
+- **Precision Input Masking:** Transparent layer shell tracks the exact bounding box of the morphing pill across compact, peeking, and expanded states, ensuring 100% click-through for background windows.
+
 ## 2.6.0
 
 - **Liquid Glass Top-Center Island:** Overhauled presentation into a true physical top-center Dynamic Island with smooth spring animations and specular highlight edges.
@@ -48,12 +60,3 @@
 - Kept timer state from version 2.0.0 readable during upgrade.
 
 ## 2.0.0
-
-- Replaced media shell polling with Quickshell's native MPRIS service.
-- Added automatic player following and a manual multi-player picker.
-- Added player capability checks for transport, seek, and volume actions.
-- Added an independent timer bubble and a second stopwatch bubble.
-- Persisted timer and stopwatch state across Quickshell reloads.
-- Added timer completion notification and one-minute adjustment from the bar.
-- Reworked the panel into Home, Music, and Timer views.
-- Removed the decorative audio waveform and executable-presence agent card.

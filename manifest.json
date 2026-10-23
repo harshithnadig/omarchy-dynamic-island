@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "harshith.dynamic-island",
   "name": "Dynamic Island Pro",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "author": "Harshith Nadig",
   "license": "MIT",
-  "description": "Apple-style top-center Dynamic Island with dancing audio equalizer, native MPRIS media player, Focus Studio & timers, AI Agents Hub, and Hyprland desk controls.",
+  "description": "Ultra-fluid Apple-grade Dynamic Island for Omarchy featuring real-time Cava audio visualizer, spring-morphed Peek banners, physical alert shake physics, Quick Volume/Brightness sliders, AI Studio with local LLMs, and persistent clipboard Shelf.",
   "kinds": [
     "service"
   ],

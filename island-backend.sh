@@ -1,10 +1,61 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Dynamic Island Telemetry, Media & AI Agent Backend
+# Dynamic Island Pro Backend: Telemetry, Media, Audio, Display, Agents & Shelf
 
 playerctl_call() {
   command -v playerctl >/dev/null 2>&1 || return 127
   timeout 1s playerctl "$@"
+}
+
+get_volume_info() {
+  local vol_line pct=50 muted=false
+  vol_line=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null || echo "Volume: 0.50")
+  if [[ "$vol_line" =~ ([0-9]+(\.[0-9]+)?) ]]; then
+    pct=$(awk -v v="${BASH_REMATCH[1]}" 'BEGIN { printf "%d", (v * 100) + 0.5 }')
+  fi
+  if [[ "$vol_line" == *"[MUTED]"* ]]; then
+    muted=true
+  fi
+  echo "$pct $muted"
+}
+
+get_brightness_info() {
+  local cur max pct=50
+  if command -v brightnessctl >/dev/null 2>&1; then
+    cur=$(brightnessctl get 2>/dev/null || echo 50)
+    max=$(brightnessctl max 2>/dev/null || echo 100)
+    if (( max > 0 )); then
+      pct=$(( (cur * 100) / max ))
+    fi
+  fi
+  echo "$pct"
+}
+
+get_clipboard_info() {
+  local clip_type="empty"
+  local clip_text=""
+  local clip_img=""
+
+  if command -v wl-paste >/dev/null 2>&1; then
+    local types
+    types=$(wl-paste --list-types 2>/dev/null || true)
+    if [[ -n "$types" ]]; then
+      if echo "$types" | grep -q '^image/'; then
+        clip_type="image"
+        clip_img="/tmp/dynamic-island-pro-clip.png"
+        wl-paste > "$clip_img" 2>/dev/null || clip_type="empty"
+      elif echo "$types" | grep -q '^text/'; then
+        clip_type="text"
+        clip_text=$(wl-paste -n 2>/dev/null | head -c 256 || true)
+      fi
+    fi
+  fi
+
+  jq -n \
+    --arg type "$clip_type" \
+    --arg text "$clip_text" \
+    --arg img "$clip_img" \
+    '{ type: $type, text: $text, image_path: $img }'
 }
 
 get_state() {
@@ -62,6 +113,20 @@ get_state() {
     bat_pct=$((battery_total / battery_count))
   fi
 
+  # Audio & Display Telemetry
+  read -r vol_pct vol_muted < <(get_volume_info)
+  disp_brightness=$(get_brightness_info)
+
+  # System Toggles (Night light & Idle)
+  local night_enabled=false idle_enabled=false
+  if command -v omarchy >/dev/null 2>&1; then
+    local night_json idle_json
+    night_json=$(omarchy toggle nightlight --status 2>/dev/null || echo '{"enabled":false}')
+    idle_json=$(omarchy toggle idle status 2>/dev/null || echo '{"enabled":false}')
+    night_enabled=$(jq -r '.enabled // false' <<<"$night_json")
+    idle_enabled=$(jq -r '.enabled // false' <<<"$idle_json")
+  fi
+
   # AI Agents & Local Models Telemetry
   local antigravity_available=false
   local antigravity_active=false
@@ -72,6 +137,7 @@ get_state() {
   local local_models_available=false
   local local_models_active=false
   local screen_recording_active=false
+  local local_models_list="[]"
 
   if [[ "$include_media" == "true" ]]; then
     command -v agy >/dev/null 2>&1 && antigravity_available=true
@@ -83,10 +149,11 @@ get_state() {
     command -v codex >/dev/null 2>&1 && codex_available=true
     if pgrep -f "codex" >/dev/null 2>&1; then codex_active=true; fi
 
-    # Local model router / llama-swap detection
+    # Local model router / llama-swap detection & model list
     if systemctl --user is-active dsh-local-model-router >/dev/null 2>&1 || pgrep -f "llama-swap|llama.cpp" >/dev/null 2>&1; then
       local_models_available=true
       local_models_active=true
+      local_models_list=$(curl -s --max-time 1 http://127.0.0.1:18080/v1/models 2>/dev/null | jq -c '[.data[]? | {id: .id, name: .name, status: (.status.value // "unloaded")}]' 2>/dev/null || echo "[]")
     elif command -v ollama >/dev/null 2>&1; then
       local_models_available=true
       if systemctl --user is-active ollama >/dev/null 2>&1 || pgrep -x "ollama" >/dev/null 2>&1; then
@@ -100,6 +167,10 @@ get_state() {
     fi
   fi
 
+  # Clipboard Telemetry
+  local clip_json
+  clip_json=$(get_clipboard_info)
+
   jq -n \
     --arg playing "$playing" \
     --arg status "$status" \
@@ -111,6 +182,11 @@ get_state() {
     --arg bat_status "$bat_status" \
     --argjson bat_pct "$bat_pct" \
     --argjson battery_available "$battery_available" \
+    --argjson vol_pct "$vol_pct" \
+    --argjson vol_muted "$vol_muted" \
+    --argjson disp_brightness "$disp_brightness" \
+    --argjson night_enabled "$night_enabled" \
+    --argjson idle_enabled "$idle_enabled" \
     --argjson antigravity_available "$antigravity_available" \
     --argjson antigravity_active "$antigravity_active" \
     --argjson claude_available "$claude_available" \
@@ -119,7 +195,9 @@ get_state() {
     --argjson codex_active "$codex_active" \
     --argjson local_models_available "$local_models_available" \
     --argjson local_models_active "$local_models_active" \
+    --argjson local_models_list "$local_models_list" \
     --argjson recording_active "$screen_recording_active" \
+    --argjson clipboard "$clip_json" \
     '{
       media: {
         playing: ($playing == "true"),
@@ -134,6 +212,17 @@ get_state() {
         available: $battery_available,
         status: $bat_status,
         pct: $bat_pct
+      },
+      audio: {
+        volume: $vol_pct,
+        muted: $vol_muted
+      },
+      display: {
+        brightness: $disp_brightness
+      },
+      system: {
+        nightlight: $night_enabled,
+        idle: $idle_enabled
       },
       recording: {
         active: $recording_active
@@ -158,9 +247,11 @@ get_state() {
           available: $local_models_available,
           active: $local_models_active,
           name: "Local Models (Bonsai 2 / llama-swap)",
-          endpoint: "http://127.0.0.1:18080"
+          endpoint: "http://127.0.0.1:18080",
+          models: $local_models_list
         }
-      }
+      },
+      clipboard: $clipboard
     }'
 }
 
@@ -168,6 +259,67 @@ cmd="${1:-get}"
 case "$cmd" in
   battery)
     get_state false
+    ;;
+  volume)
+    read -r vol_pct vol_muted < <(get_volume_info)
+    jq -n --argjson vol "$vol_pct" --argjson muted "$vol_muted" '{ volume: $vol, muted: $muted }'
+    ;;
+  set-volume)
+    val="${2:-50}"
+    if [[ "$val" =~ ^[0-9]+$ ]] && command -v wpctl >/dev/null 2>&1; then
+      (( val < 0 )) && val=0
+      (( val > 100 )) && val=100
+      float_val=$(awk -v v="$val" 'BEGIN { printf "%.2f", v / 100 }')
+      wpctl set-volume @DEFAULT_AUDIO_SINK@ "$float_val" 2>/dev/null || true
+    fi
+    get_state false
+    ;;
+  toggle-mute)
+    if command -v wpctl >/dev/null 2>&1; then
+      wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle 2>/dev/null || true
+    fi
+    get_state false
+    ;;
+  brightness)
+    disp_brightness=$(get_brightness_info)
+    jq -n --argjson b "$disp_brightness" '{ brightness: $b }'
+    ;;
+  set-brightness)
+    val="${2:-50}"
+    if [[ "$val" =~ ^[0-9]+$ ]] && command -v brightnessctl >/dev/null 2>&1; then
+      (( val < 0 )) && val=0
+      (( val > 100 )) && val=100
+      brightnessctl set "${val}%" >/dev/null 2>&1 || true
+    fi
+    get_state false
+    ;;
+  toggle-nightlight)
+    if command -v omarchy >/dev/null 2>&1; then
+      omarchy toggle nightlight >/dev/null 2>&1 || true
+    fi
+    get_state false
+    ;;
+  toggle-idle)
+    if command -v omarchy >/dev/null 2>&1; then
+      omarchy toggle idle >/dev/null 2>&1 || true
+    fi
+    get_state false
+    ;;
+  clipboard)
+    get_clipboard_info
+    ;;
+  clear-clipboard)
+    if command -v wl-copy >/dev/null 2>&1; then
+      wl-copy --clear 2>/dev/null || true
+    fi
+    jq -n '{ type: "empty", text: "", image_path: "" }'
+    ;;
+  copy-text)
+    text="${2:-}"
+    if command -v wl-copy >/dev/null 2>&1; then
+      printf '%s' "$text" | wl-copy 2>/dev/null || true
+    fi
+    jq -n --arg t "$text" '{ copied: true, text: $t }'
     ;;
   play-pause)
     playerctl_call play-pause 2>/dev/null || true
@@ -189,18 +341,19 @@ case "$cmd" in
     get_state
     ;;
   volume-up|volume-down)
-    if command -v playerctl >/dev/null 2>&1; then
-      volume=$(playerctl_call volume 2>/dev/null || echo 0)
-      if [[ "$volume" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
-        if [[ "$cmd" == "volume-up" ]]; then
-          volume=$(awk -v v="$volume" 'BEGIN { v += 0.05; if (v > 1) v = 1; printf "%.2f", v }')
-        else
-          volume=$(awk -v v="$volume" 'BEGIN { v -= 0.05; if (v < 0) v = 0; printf "%.2f", v }')
-        fi
-        playerctl_call volume "$volume" 2>/dev/null || true
+    if command -v wpctl >/dev/null 2>&1; then
+      read -r cur_vol _ < <(get_volume_info)
+      if [[ "$cmd" == "volume-up" ]]; then
+        cur_vol=$((cur_vol + 5))
+        (( cur_vol > 100 )) && cur_vol=100
+      else
+        cur_vol=$((cur_vol - 5))
+        (( cur_vol < 0 )) && cur_vol=0
       fi
+      float_val=$(awk -v v="$cur_vol" 'BEGIN { printf "%.2f", v / 100 }')
+      wpctl set-volume @DEFAULT_AUDIO_SINK@ "$float_val" 2>/dev/null || true
     fi
-    get_state
+    get_state false
     ;;
   *)
     get_state

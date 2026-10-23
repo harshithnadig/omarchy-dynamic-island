@@ -17,7 +17,7 @@ Scope {
 
       screen: modelData
       anchors { top: true; left: true; right: true }
-      implicitHeight: core.item && core.item.isExpanded ? Style.space(500) : Style.space(52)
+      implicitHeight: core.item && core.item.isExpanded ? Style.space(520) : Style.space(64)
       color: "transparent"
       exclusionMode: ExclusionMode.Ignore
       WlrLayershell.namespace: "harshith-dynamic-island"
@@ -31,7 +31,7 @@ Scope {
           : (core.item ? core.item.maskItem : null)
 
         Region {
-          item: core.item && !core.item.isExpanded && core.item.satelliteItem && core.item.satelliteItem.visible
+          item: core.item && !core.item.isExpanded && !core.item.isPeeking && core.item.satelliteItem && core.item.satelliteItem.visible
             ? core.item.satelliteItem : null
         }
       }
