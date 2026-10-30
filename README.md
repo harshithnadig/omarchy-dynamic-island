@@ -21,6 +21,7 @@ The Home page shows live status cards. Select a card to open its control page.
 - Use the media buttons to skip or play tracks.
 - Start or pause a 25-minute focus timer from Home.
 - Toggle mute or Night Light from Home.
+- Capture a screenshot, toggle Stay Awake, or jump straight to the Clipboard Shelf.
 - Select an arrow or AI button to open its control page.
 - Open the island to the Home page by default.
 

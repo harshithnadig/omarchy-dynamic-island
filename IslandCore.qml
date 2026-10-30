@@ -1688,6 +1688,7 @@ Item {
           systemVolume: root.systemVolume
           systemMuted: root.systemMuted
           nightlightEnabled: root.nightlightEnabled
+          idleEnabled: root.idleEnabled
           onNavigate: function(page) { root.activeTab = page }
           onActionRequested: function(action) {
             if (action === "media-previous") root.mediaAction("previous")
@@ -1698,6 +1699,9 @@ Item {
               else root.startTimer(25, "Focus session", "focus")
             } else if (action === "toggle-mute") root.toggleSystemMute()
             else if (action === "toggle-nightlight") root.toggleNightlight()
+            else if (action === "screenshot") root.takeScreenshot()
+            else if (action === "toggle-idle") root.toggleIdle()
+            else if (action === "open-shelf") root.activeTab = "shelf"
           }
         }
 

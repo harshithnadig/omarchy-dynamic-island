@@ -28,6 +28,7 @@ Item {
   property int systemVolume: 0
   property bool systemMuted: false
   property bool nightlightEnabled: false
+  property bool idleEnabled: false
 
   signal navigate(string page)
   signal actionRequested(string action)
@@ -278,13 +279,46 @@ Item {
       }
     }
 
-    Text {
+    RowLayout {
       Layout.fillWidth: true
-      text: "Use the buttons or arrows to open controls"
-      horizontalAlignment: Text.AlignHCenter
-      color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.38)
-      font.family: Style.font.family
-      font.pixelSize: Style.space(9)
+      spacing: Style.space(7)
+
+      Repeater {
+        model: [
+          { label: "Screenshot", action: "screenshot" },
+          { label: root.idleEnabled ? "Stay awake on" : "Stay awake", action: "toggle-idle" },
+          { label: "Clipboard", action: "open-shelf" }
+        ]
+
+        Rectangle {
+          id: shortcut
+          required property var modelData
+          Layout.fillWidth: true
+          height: Style.space(30)
+          radius: Style.space(9)
+          color: shortcutMouse.containsMouse
+            ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.15)
+            : Qt.rgba(1, 1, 1, 0.055)
+          border.color: Qt.rgba(1, 1, 1, 0.08)
+
+          Text {
+            anchors.centerIn: parent
+            text: shortcut.modelData.label
+            color: root.foreground
+            font.family: Style.font.family
+            font.pixelSize: Style.space(9)
+            font.weight: Font.DemiBold
+          }
+
+          MouseArea {
+            id: shortcutMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.actionRequested(shortcut.modelData.action)
+          }
+        }
+      }
     }
   }
 }

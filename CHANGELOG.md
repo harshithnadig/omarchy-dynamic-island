@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.0.2
+
+- Add Home shortcuts for screenshots, Stay Awake, and the Clipboard Shelf.
+- Show the Stay Awake toggle state on Home.
+
 ## 3.0.1
 
 - Add one-tap media transport, focus timer, mute, and Night Light controls to Home.
