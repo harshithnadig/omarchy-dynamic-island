@@ -6,6 +6,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
 import Quickshell.Services.Mpris
+import "components" as IslandComponents
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
@@ -16,7 +17,38 @@ Item {
   // Master Expansion & Peek States
   property bool isExpanded: false
   property bool isPeeking: false
-  property string activeTab: "music"
+  property string activeTab: "home"
+  readonly property var tabOrder: ["home", "music", "timer", "agents", "stats", "shelf", "system"]
+  readonly property string activeSectionTitle: {
+    if (activeTab === "home") return "Your island"
+    if (activeTab === "music") return hasTrack ? "Now playing" : "Music"
+    if (activeTab === "timer") return "Focus studio"
+    if (activeTab === "agents") return "Agent activity"
+    if (activeTab === "stats") return "System health"
+    if (activeTab === "shelf") return "Your shelf"
+    return "Quick controls"
+  }
+  readonly property string activeSectionSubtitle: {
+    if (activeTab === "home") return "A quick look at what matters right now"
+    if (activeTab === "music") return hasTrack ? mediaTitle : "Your music, in one place"
+    if (activeTab === "timer") return timerActive ? (timerName || "Focus session") : "Timers and deep work"
+    if (activeTab === "agents") return "Local tools and live sessions"
+    if (activeTab === "stats") return "Hardware and network at a glance"
+    if (activeTab === "shelf") return "Clipboard, screenshots and notes"
+    return "Sound, display and connectivity"
+  }
+  readonly property string activeSectionIcon: {
+    if (activeTab === "home") return "⌂"
+    if (activeTab === "music") return "♫"
+    if (activeTab === "timer") return "◷"
+    if (activeTab === "agents") return "⌘"
+    if (activeTab === "stats") return "◫"
+    if (activeTab === "shelf") return "▤"
+    return "☼"
+  }
+  property int previousTabIndex: 0
+  property real tabContentX: 0
+  property real tabContentOpacity: 1
   property string positionMode: "auto" // "auto", "flush", "snug", "floating"
   property int topOffset: 0
   property int detectedTopBarHeight: 0
@@ -126,7 +158,6 @@ Item {
 
   // Motion physics (Shake & Dip)
   property real shakeX: 0
-  property real bounceY: 0
 
   // Peek Banners & Interactive Permission Interceptor
   property var peekData: ({ icon: "music", title: "", subtitle: "", target: "music" })
@@ -135,6 +166,48 @@ Item {
   // State persistence
   property bool stateReady: false
   property bool stateTouched: false
+
+  onActiveTabChanged: {
+    var nextIndex = root.tabOrder.indexOf(root.activeTab)
+    if (nextIndex < 0 || !root.stateReady) {
+      root.previousTabIndex = nextIndex
+      root.tabContentX = 0
+      root.tabContentOpacity = 1
+      return
+    }
+    if (nextIndex === root.previousTabIndex) return
+
+    var direction = nextIndex > root.previousTabIndex ? 1 : -1
+    root.previousTabIndex = nextIndex
+    if (Style.reduceMotion) {
+      root.tabContentX = 0
+      root.tabContentOpacity = 1
+      return
+    }
+
+    root.tabContentX = direction * Style.space(18)
+    root.tabContentOpacity = 0
+    tabContentEntrance.restart()
+  }
+
+  ParallelAnimation {
+    id: tabContentEntrance
+    NumberAnimation {
+      target: root
+      property: "tabContentX"
+      to: 0
+      duration: Style.duration(180)
+      easing.type: Easing.Bezier
+      easing.bezierCurve: Style.easeOut
+    }
+    NumberAnimation {
+      target: root
+      property: "tabContentOpacity"
+      to: 1
+      duration: Style.duration(140)
+      easing.type: Easing.OutCubic
+    }
+  }
 
   // Bounding rect for input masking in Service.qml
   readonly property var maskItem: morphCard
@@ -307,27 +380,21 @@ Item {
       wasAgent + " continuing", "agents", 1800)
   }
 
-  // ================= PHYSICAL SHAKE & BOUNCE ANIMATION =================
+  // ================= REDUCED, COORDINATED ALERT MOTION =================
   SequentialAnimation {
     id: shakeAnim
-    NumberAnimation { target: root; property: "shakeX"; to: -10; duration: 55; easing.type: Easing.OutSine }
-    NumberAnimation { target: root; property: "shakeX"; to: 9; duration: 75; easing.type: Easing.InOutSine }
-    NumberAnimation { target: root; property: "shakeX"; to: -7; duration: 70; easing.type: Easing.InOutSine }
-    NumberAnimation { target: root; property: "shakeX"; to: 5; duration: 65; easing.type: Easing.InOutSine }
-    NumberAnimation { target: root; property: "shakeX"; to: -2; duration: 60; easing.type: Easing.InOutSine }
-    NumberAnimation { target: root; property: "shakeX"; to: 0; duration: 55; easing.type: Easing.OutSine }
-  }
-
-  SequentialAnimation {
-    id: bounceAnim
-    NumberAnimation { target: root; property: "bounceY"; to: 4; duration: 70; easing.type: Easing.OutQuad }
-    NumberAnimation { target: root; property: "bounceY"; to: -1; duration: 90; easing.type: Easing.InOutQuad }
-    NumberAnimation { target: root; property: "bounceY"; to: 0; duration: 80; easing.type: Easing.OutQuad }
+    running: false
+    NumberAnimation { target: root; property: "shakeX"; to: -3; duration: Style.duration(55); easing.type: Easing.OutCubic }
+    NumberAnimation { target: root; property: "shakeX"; to: 2; duration: Style.duration(70); easing.type: Easing.OutCubic }
+    NumberAnimation { target: root; property: "shakeX"; to: 0; duration: Style.duration(75); easing.type: Easing.OutCubic }
   }
 
   function shake() {
+    if (Style.reduceMotion) {
+      root.shakeX = 0
+      return
+    }
     shakeAnim.restart()
-    bounceAnim.restart()
   }
 
   // ================= PEEK NOTIFICATION SYSTEM =================
@@ -440,6 +507,15 @@ Item {
     return hours > 0
       ? hours + ":" + ("0" + minutes).slice(-2) + ":" + ("0" + remainder).slice(-2)
       : minutes + ":" + ("0" + remainder).slice(-2)
+  }
+  function availableAgentCount() {
+    var agents = root.agentsData || ({})
+    var keys = ["codex", "claude_code", "antigravity", "local_models"]
+    var count = 0
+    for (var i = 0; i < keys.length; i++) {
+      if (agents[keys[i]] && agents[keys[i]].available === true) count++
+    }
+    return count
   }
 
   function playChime() {
@@ -840,8 +916,8 @@ Item {
       id: ambientHalo
       z: 1
       anchors.centerIn: morphCard
-      width: morphCard.width + Style.space(26) + cavaVisualizer.beat * Style.space(20)
-      height: morphCard.height + Style.space(26) + cavaVisualizer.beat * Style.space(20)
+      width: morphCard.width + Style.space(26)
+      height: morphCard.height + Style.space(26)
       radius: morphCard.radius + Style.space(12)
       color: root.isPlaying
         ? Qt.rgba(Commons.Color.accent.r, Commons.Color.accent.g, Commons.Color.accent.b, 0.20 + cavaVisualizer.level * 0.30)
@@ -849,10 +925,22 @@ Item {
       opacity: root.isPlaying ? Math.min(1.0, 0.35 + cavaVisualizer.level * 0.65) : 0
       visible: opacity > 0.01
 
-      Behavior on opacity { NumberAnimation { duration: 180 } }
-      Behavior on width { SpringAnimation { spring: 5.5; damping: 0.33; mass: 0.75 } }
-      Behavior on height { SpringAnimation { spring: 5.5; damping: 0.33; mass: 0.75 } }
-      Behavior on radius { NumberAnimation { duration: 220 } }
+      Behavior on opacity { NumberAnimation { duration: Style.duration(100); easing.type: Easing.OutCubic } }
+      Behavior on width {
+        NumberAnimation {
+          duration: Style.duration(root.isExpanded ? 240 : 160)
+          easing.type: Easing.Bezier
+          easing.bezierCurve: Style.easeOut
+        }
+      }
+      Behavior on height {
+        NumberAnimation {
+          duration: Style.duration(root.isExpanded ? 240 : 160)
+          easing.type: Easing.Bezier
+          easing.bezierCurve: Style.easeOut
+        }
+      }
+      Behavior on radius { NumberAnimation { duration: Style.duration(200); easing.type: Easing.OutCubic } }
     }
 
     // THE MORPHING ISLAND CARD (Physical Liquid Glass Pill)
@@ -861,33 +949,39 @@ Item {
       z: 2
       anchors.horizontalCenter: parent.horizontalCenter
       y: root.effectiveTopOffset
-      Behavior on y { SpringAnimation { spring: 5.5; damping: 0.35 } }
+      Behavior on y {
+        NumberAnimation {
+          duration: Style.duration(root.isExpanded ? 240 : 160)
+          easing.type: Easing.Bezier
+          easing.bezierCurve: Style.easeOut
+        }
+      }
 
       width: root.isExpanded
-        ? Style.space(480)
+        ? Style.space(520)
         : (root.isPeeking ? root.peekWidth : root.compactWidth)
       height: root.isExpanded
-        ? Style.space(480)
+        ? Style.space(520)
         : (root.isPeeking ? Style.space(42) : Style.space(34))
       radius: root.isExpanded
         ? Style.space(26)
         : (root.isPeeking ? Style.space(21) : Style.space(17))
 
       // Physical spring scale response on click and hover
-      scale: compactMouse.pressed ? 0.95 : (root.capsuleHovered ? 1.02 : 1.0)
+      scale: compactMouse.pressed ? 0.97 : (root.capsuleHovered ? 1.01 : 1.0)
       transformOrigin: Item.Top
-      Behavior on scale { SpringAnimation { spring: 6.0; damping: 0.35 } }
+      Behavior on scale {
+        NumberAnimation {
+          duration: Style.duration(compactMouse.pressed ? 80 : 120)
+          easing.type: Easing.OutCubic
+        }
+      }
 
       transform: Translate {
         x: root.shakeX
-        y: root.bounceY
       }
 
-      gradient: Gradient {
-        GradientStop { position: 0.0; color: "#18181c" }
-        GradientStop { position: 0.25; color: "#09090d" }
-        GradientStop { position: 1.0; color: "#020204" }
-      }
+      color: "#08090d"
 
       border.color: root.isExpanded
         ? Qt.rgba(Commons.Color.accent.r, Commons.Color.accent.g, Commons.Color.accent.b, 0.55)
@@ -896,13 +990,39 @@ Item {
           : (root.isPeeking
             ? Qt.rgba(Commons.Color.accent.r, Commons.Color.accent.g, Commons.Color.accent.b, 0.45)
             : (root.capsuleHovered ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.12))))
-      border.width: 1
+      border.width: root.isExpanded ? 1.5 : 1
       clip: true
 
-      Behavior on width { SpringAnimation { spring: 5.5; damping: 0.33; mass: 0.75 } }
-      Behavior on height { SpringAnimation { spring: 5.5; damping: 0.33; mass: 0.75 } }
-      Behavior on radius { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-      Behavior on border.color { ColorAnimation { duration: 180 } }
+      Rectangle {
+        z: 0
+        anchors.top: parent.top
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: parent.width
+        height: root.isExpanded ? Style.space(150) : parent.height
+        radius: parent.radius
+        gradient: Gradient {
+          GradientStop { position: 0; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, root.isExpanded ? 0.18 : 0.05) }
+          GradientStop { position: 0.62; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.025) }
+          GradientStop { position: 1; color: "transparent" }
+        }
+      }
+
+      Behavior on width {
+        NumberAnimation {
+          duration: Style.duration(root.isExpanded ? 240 : 160)
+          easing.type: Easing.Bezier
+          easing.bezierCurve: Style.easeOut
+        }
+      }
+      Behavior on height {
+        NumberAnimation {
+          duration: Style.duration(root.isExpanded ? 240 : 160)
+          easing.type: Easing.Bezier
+          easing.bezierCurve: Style.easeOut
+        }
+      }
+      Behavior on radius { NumberAnimation { duration: Style.duration(200); easing.type: Easing.OutCubic } }
+      Behavior on border.color { ColorAnimation { duration: Style.duration(160); easing.type: Easing.InOutQuad } }
 
       // Physical Specular Curved Glass Edge
       Rectangle {
@@ -919,13 +1039,15 @@ Item {
           GradientStop { position: 1.0; color: "transparent" }
         }
         opacity: root.isExpanded ? 0.4 : (root.capsuleHovered || root.isPeeking ? 0.35 : 0.22)
-        Behavior on opacity { NumberAnimation { duration: 180 } }
+        Behavior on opacity { NumberAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic } }
       }
 
       // Compact & Peek Click & Hover Handler
       MouseArea {
         id: compactMouse
         anchors.fill: parent
+        scale: 1 / morphCard.scale
+        transformOrigin: Item.Top
         enabled: !root.isExpanded
         acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
         cursorShape: Qt.PointingHandCursor
@@ -962,10 +1084,18 @@ Item {
       // 1. PEEK BANNER VIEW (Visible during Notification Peek)
       // -------------------------------------------------------------
       Item {
+        id: peekView
         anchors.fill: parent
-        visible: !root.isExpanded && (root.isPeeking || root.agentPendingRequest !== null)
-        opacity: !root.isExpanded && (root.isPeeking || root.agentPendingRequest !== null) ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 160 } }
+        readonly property bool shown: !root.isExpanded && (root.isPeeking || root.agentPendingRequest !== null)
+        visible: shown || opacity > 0.01
+        enabled: shown
+        opacity: shown ? 1 : 0
+        Behavior on opacity {
+          NumberAnimation {
+            duration: Style.duration(peekView.shown ? 140 : 90)
+            easing.type: Easing.OutCubic
+          }
+        }
 
         // Agent Permission Request Peek Banner
         RowLayout {
@@ -1092,10 +1222,18 @@ Item {
       // 2. COMPACT VIEW CONTENT (Visible when resting & not peeking)
       // -------------------------------------------------------------
       Item {
+        id: compactView
         anchors.fill: parent
-        visible: !root.isExpanded && !root.isPeeking && root.agentPendingRequest === null
-        opacity: !root.isExpanded && !root.isPeeking && root.agentPendingRequest === null ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 160 } }
+        readonly property bool shown: !root.isExpanded && !root.isPeeking && root.agentPendingRequest === null
+        visible: shown || opacity > 0.01
+        enabled: shown
+        opacity: shown ? 1 : 0
+        Behavior on opacity {
+          NumberAnimation {
+            duration: Style.duration(compactView.shown ? 140 : 90)
+            easing.type: Easing.OutCubic
+          }
+        }
 
         // Volume HUD on Scroll
         RowLayout {
@@ -1140,11 +1278,6 @@ Item {
           Rectangle {
             width: Style.space(8); height: Style.space(8); radius: width / 2
             color: "#ef4444"
-            SequentialAnimation on opacity {
-              loops: Animation.Infinite
-              NumberAnimation { from: 1.0; to: 0.2; duration: 600 }
-              NumberAnimation { from: 0.2; to: 1.0; duration: 600 }
-            }
           }
           Text {
             Layout.fillWidth: true
@@ -1200,8 +1333,9 @@ Item {
 
               RotationAnimation on rotation {
                 running: root.isPlaying
+                  && !Style.reduceMotion
                 loops: Animation.Infinite
-                from: 0; to: 360; duration: 4000
+                from: 0; to: 360; duration: Style.duration(4000)
               }
               Rectangle {
                 anchors.centerIn: parent
@@ -1253,7 +1387,7 @@ Item {
                   : Style.space(3)
                 radius: Style.space(1.2)
                 color: root.accent
-                Behavior on height { NumberAnimation { duration: 65 } }
+                Behavior on height { NumberAnimation { duration: Style.duration(65); easing.type: Easing.OutCubic } }
               }
             }
           }
@@ -1341,12 +1475,93 @@ Item {
       // 3. EXPANDED VIEW CONTENT (Full Rich Card)
       // -------------------------------------------------------------
       ColumnLayout {
-        anchors.fill: parent
-        anchors.margins: Style.space(12)
+        anchors.top: parent.top
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.topMargin: Style.space(12)
+        width: Style.space(496)
+        height: Style.space(496)
         spacing: Style.space(10)
-        visible: root.isExpanded
         opacity: root.isExpanded ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 200 } }
+        enabled: root.isExpanded
+        visible: root.isExpanded || opacity > 0.01
+        Behavior on opacity {
+          NumberAnimation {
+            duration: Style.duration(root.isExpanded ? 220 : 140)
+            easing.type: Easing.OutCubic
+          }
+        }
+
+        // Section identity and live clock
+        RowLayout {
+          Layout.fillWidth: true
+          Layout.preferredHeight: Style.space(38)
+          spacing: Style.space(10)
+
+          Rectangle {
+            Layout.preferredWidth: Style.space(36)
+            Layout.preferredHeight: Style.space(36)
+            radius: Style.space(12)
+            color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.2)
+            border.color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.55)
+            border.width: 1
+            Text {
+              anchors.centerIn: parent
+              text: root.activeSectionIcon
+              color: root.accent
+              font.pixelSize: Style.space(20)
+              font.weight: Font.DemiBold
+            }
+          }
+
+          ColumnLayout {
+            Layout.fillWidth: true
+            spacing: Style.space(1)
+            Text {
+              Layout.fillWidth: true
+              text: root.activeSectionTitle
+              textFormat: Text.PlainText
+              elide: Text.ElideRight
+              font.family: Style.font.family
+              font.pixelSize: Style.space(15)
+              font.weight: Font.DemiBold
+              color: root.capsuleInk
+            }
+            Text {
+              Layout.fillWidth: true
+              text: root.activeSectionSubtitle
+              textFormat: Text.PlainText
+              elide: Text.ElideRight
+              font.family: Style.font.family
+              font.pixelSize: Style.space(10)
+              color: Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.58)
+            }
+          }
+
+          Rectangle {
+            Layout.preferredWidth: Style.space(82)
+            Layout.preferredHeight: Style.space(30)
+            radius: Style.space(15)
+            color: Qt.rgba(1, 1, 1, 0.055)
+            border.color: Qt.rgba(1, 1, 1, 0.1)
+            RowLayout {
+              anchors.centerIn: parent
+              spacing: Style.space(5)
+              Rectangle {
+                Layout.preferredWidth: Style.space(6)
+                Layout.preferredHeight: Style.space(6)
+                radius: width / 2
+                color: root.isPlaying ? "#54d6a0" : root.accent
+              }
+              Text {
+                text: root.clockLabel
+                font.family: Style.font.family
+                font.pixelSize: Style.space(11)
+                font.weight: Font.DemiBold
+                color: root.capsuleInk
+              }
+            }
+          }
+        }
 
         // Top Navigation Header (Capsule handle + 6 Tabs)
         RowLayout {
@@ -1377,6 +1592,7 @@ Item {
             spacing: Style.space(3)
             Repeater {
               model: [
+                { key: "home", label: "Home", icon: "⌂" },
                 { key: "music", label: "Music", icon: "♫" },
                 { key: "timer", label: "Focus", icon: "⏱️" },
                 { key: "agents", label: "AI", icon: "🤖" },
@@ -1387,31 +1603,59 @@ Item {
               Rectangle {
                 id: tabBtn
                 required property var modelData
+                property bool hovered: false
                 Layout.fillWidth: true
-                height: Style.space(26)
-                radius: Style.space(6)
-                color: root.activeTab === tabBtn.modelData.key ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.22) : root.glass
-                border.color: root.activeTab === tabBtn.modelData.key ? root.accent : Qt.rgba(1, 1, 1, 0.08)
+                height: Style.space(42)
+                radius: Style.space(12)
+                color: root.activeTab === tabBtn.modelData.key
+                  ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
+                  : (tabBtn.hovered ? Qt.rgba(1, 1, 1, 0.075) : Qt.rgba(1, 1, 1, 0.025))
+                border.color: root.activeTab === tabBtn.modelData.key
+                  ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.48)
+                  : Qt.rgba(1, 1, 1, tabBtn.hovered ? 0.12 : 0.045)
                 border.width: 1
+                Behavior on color { ColorAnimation { duration: Style.duration(140); easing.type: Easing.InOutQuad } }
+                Behavior on border.color { ColorAnimation { duration: Style.duration(140); easing.type: Easing.InOutQuad } }
 
-                Row {
+                Column {
                   anchors.centerIn: parent
-                  spacing: Style.space(3)
+                  spacing: Style.space(2)
                   Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
                     text: tabBtn.modelData.icon
-                    font.pixelSize: Style.space(10)
+                    color: root.activeTab === tabBtn.modelData.key ? root.accent : Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.76)
+                    font.pixelSize: Style.space(14)
+                    Behavior on color { ColorAnimation { duration: Style.duration(140); easing.type: Easing.InOutQuad } }
                   }
                   Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
                     text: tabBtn.modelData.label
-                    color: root.activeTab === tabBtn.modelData.key ? root.capsuleInk : Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.6)
+                    color: root.activeTab === tabBtn.modelData.key ? root.capsuleInk : Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.56)
                     font.family: Style.font.family
-                    font.pixelSize: Style.space(10)
+                    font.pixelSize: Style.space(9)
                     font.weight: root.activeTab === tabBtn.modelData.key ? Font.DemiBold : Font.Normal
                   }
                 }
+
+                Rectangle {
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  anchors.bottom: parent.bottom
+                  anchors.bottomMargin: Style.space(3)
+                  width: root.activeTab === tabBtn.modelData.key ? Style.space(18) : Style.space(4)
+                  height: Style.space(2)
+                  radius: height / 2
+                  color: root.activeTab === tabBtn.modelData.key ? root.accent : Qt.rgba(1, 1, 1, 0.18)
+                  opacity: root.activeTab === tabBtn.modelData.key ? 1 : (tabBtn.hovered ? 0.8 : 0)
+                  Behavior on width { NumberAnimation { duration: Style.duration(160); easing.type: Easing.OutCubic } }
+                  Behavior on opacity { NumberAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic } }
+                }
+
                 MouseArea {
                   anchors.fill: parent
                   cursorShape: Qt.PointingHandCursor
+                  hoverEnabled: true
+                  onEntered: tabBtn.hovered = true
+                  onExited: tabBtn.hovered = false
                   onClicked: root.activeTab = tabBtn.modelData.key
                 }
               }
@@ -1419,9 +1663,39 @@ Item {
           }
         }
 
+        // ================= TAB 0: HOME OVERVIEW =================
+        IslandComponents.HomeOverview {
+          visible: root.activeTab === "home"
+          opacity: visible ? root.tabContentOpacity : 0
+          enabled: visible
+          transform: Translate { x: root.tabContentX }
+          Layout.fillWidth: true
+          Layout.fillHeight: true
+          accent: root.accent
+          foreground: root.capsuleInk
+          mutedForeground: Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.58)
+          hasTrack: root.hasTrack
+          mediaTitle: root.mediaTitle
+          mediaArtist: root.mediaArtist
+          playerName: root.playerName
+          timerActive: root.timerActive
+          timerLeft: root.timerLeft
+          timerName: root.timerName
+          availableAgents: root.availableAgentCount()
+          batteryAvailable: root.batteryAvailable
+          batteryPct: root.batteryPct
+          batteryStatus: root.batteryStatus
+          systemVolume: root.systemVolume
+          systemMuted: root.systemMuted
+          onNavigate: function(page) { root.activeTab = page }
+        }
+
         // ================= TAB 1: MUSIC =================
         ColumnLayout {
           visible: root.activeTab === "music"
+          opacity: visible ? root.tabContentOpacity : 0
+          enabled: visible
+          transform: Translate { x: root.tabContentX }
           Layout.fillWidth: true
           Layout.fillHeight: true
           spacing: Style.space(12)
@@ -1458,8 +1732,9 @@ Item {
 
                 RotationAnimation on rotation {
                   running: root.isPlaying
+                  && !Style.reduceMotion
                   loops: Animation.Infinite
-                  from: 0; to: 360; duration: 4000
+                  from: 0; to: 360; duration: Style.duration(4000)
                 }
                 Text {
                   anchors.centerIn: parent
@@ -1517,7 +1792,7 @@ Item {
                 height: parent.height
                 radius: height / 2
                 color: root.accent
-                Behavior on width { NumberAnimation { duration: 250 } }
+                Behavior on width { NumberAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic } }
               }
               MouseArea {
                 anchors.fill: parent
@@ -1635,6 +1910,9 @@ Item {
         // ================= TAB 2: FOCUS STUDIO =================
         ColumnLayout {
           visible: root.activeTab === "timer"
+          opacity: visible ? root.tabContentOpacity : 0
+          enabled: visible
+          transform: Translate { x: root.tabContentX }
           Layout.fillWidth: true
           Layout.fillHeight: true
           spacing: Style.space(10)
@@ -1789,6 +2067,9 @@ Item {
         // ================= TAB 3: AI STUDIO =================
         ColumnLayout {
           visible: root.activeTab === "agents"
+          opacity: visible ? root.tabContentOpacity : 0
+          enabled: visible
+          transform: Translate { x: root.tabContentX }
           Layout.fillWidth: true
           Layout.fillHeight: true
           spacing: Style.space(8)
@@ -1940,11 +2221,16 @@ Item {
           }
 
           ListView {
+            id: localModelsView
             Layout.fillWidth: true
-            Layout.fillHeight: true
+            Layout.preferredHeight: Style.space(156)
+            Layout.maximumHeight: Style.space(156)
             clip: true
             spacing: Style.space(4)
             model: root.localModelsList
+            Controls.ScrollBar.vertical: Controls.ScrollBar {
+              policy: Controls.ScrollBar.AsNeeded
+            }
             delegate: Rectangle {
               id: modelItemCard
               required property var modelData
@@ -1987,6 +2273,9 @@ Item {
         // ================= TAB 4: HARDWARE STATS =================
         ColumnLayout {
           visible: root.activeTab === "stats"
+          opacity: visible ? root.tabContentOpacity : 0
+          enabled: visible
+          transform: Translate { x: root.tabContentX }
           Layout.fillWidth: true
           Layout.fillHeight: true
           spacing: Style.space(10)
@@ -2194,6 +2483,9 @@ Item {
         // ================= TAB 5: SHELF & CLIPBOARD =================
         ColumnLayout {
           visible: root.activeTab === "shelf"
+          opacity: visible ? root.tabContentOpacity : 0
+          enabled: visible
+          transform: Translate { x: root.tabContentX }
           Layout.fillWidth: true
           Layout.fillHeight: true
           spacing: Style.space(10)
@@ -2387,6 +2679,9 @@ Item {
         // ================= TAB 6: SYSTEM & CONTROLS =================
         ColumnLayout {
           visible: root.activeTab === "system"
+          opacity: visible ? root.tabContentOpacity : 0
+          enabled: visible
+          transform: Translate { x: root.tabContentX }
           Layout.fillWidth: true
           Layout.fillHeight: true
           spacing: Style.space(8)
@@ -2718,11 +3013,26 @@ Item {
     Rectangle {
       id: timerSatellite
       z: 2
-      visible: !root.isExpanded && !root.isPeeking && root.agentPendingRequest === null && root.hasTrack && (root.timerActive || root.stopwatchVisible)
+      readonly property bool shown: !root.isExpanded && !root.isPeeking && root.agentPendingRequest === null && root.hasTrack && (root.timerActive || root.stopwatchVisible)
+      visible: shown || opacity > 0.01
+      enabled: shown
+      opacity: shown ? 1 : 0
+      Behavior on opacity {
+        NumberAnimation {
+          duration: Style.duration(timerSatellite.shown ? 140 : 90)
+          easing.type: Easing.OutCubic
+        }
+      }
       anchors.left: morphCard.right
       anchors.leftMargin: Style.space(6)
       y: root.effectiveTopOffset
-      Behavior on y { SpringAnimation { spring: 5.5; damping: 0.35 } }
+      Behavior on y {
+        NumberAnimation {
+          duration: Style.duration(root.isExpanded ? 240 : 160)
+          easing.type: Easing.Bezier
+          easing.bezierCurve: Style.easeOut
+        }
+      }
       width: Style.space(78)
       height: Style.space(34)
       radius: height / 2

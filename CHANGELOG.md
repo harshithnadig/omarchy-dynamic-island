@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.0.0
+
+- Add a Home overview with live media, timer, AI tool, battery, and audio status cards.
+- Make each Home card open its matching control page.
+- Add seven labeled destinations: Home, Music, Focus, AI, Stats, Shelf, and System.
+- Refine panel transitions and reduce motion when Omarchy disables animation.
+- Remove the unused vertical bounce and audio halo size jitter.
+- Keep the expanded panel transparent outside its card and the collapsed layer at 98 logical pixels.
+- Add a preview of the Home overview.
+
 ## 2.9.0
 
 - **Adaptive Top-Bar Clearance Detection:** Hyprland layer-shell scanning (`hyprctl -j layers`) automatically detects whether an Omarchy top bar, Waybar, or custom status bar is active at y=0. In `Auto` mode, the island smoothly clears below the top bar (+3px gap); when no top bar is present, it sits perfectly flush against the monitor's top bezel (0px).

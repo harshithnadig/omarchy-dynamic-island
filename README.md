@@ -4,21 +4,31 @@
 [![Omarchy Quattro](https://img.shields.io/badge/Omarchy-Quattro-8b5cf6.svg)](https://omarchy.org)
 [![Quickshell](https://img.shields.io/badge/Quickshell-0.3.2+-38bdf8.svg)](https://quickshell.outfoxxed.me)
 
-An Apple-style **Liquid Glass Dynamic Island** positioned at the top-center of your screen for **Omarchy** and **Hyprland**. Resting flush against the top bezel as a sleek notch pill that morphs organically in place, peeks fluidly on notifications, dances to live audio with Cava, intercepts AI Agent permissions, monitors hardware health (CPU/RAM/Swap/GPU), shakes on alerts, and expands into a unified command center.
+An original **Liquid Glass Dynamic Island** for **Omarchy** and **Hyprland**. It shows a compact status pill, then opens a command card for media, focus timers, AI tools, system health, and quick controls.
+
+The Home page shows live status cards. Select a card to open its control page.
 
 ![Dynamic Island Pro Icon](assets/icon.svg)
+
+![Dynamic Island Pro Home overview](preview.png)
 
 ---
 
 ## ✨ Features
 
+### 🏠 Home Overview
+- See the current track, focus timer, available AI tools, battery, and audio status at a glance.
+- Select a card to open its control page.
+- Open the island to the Home page by default.
+
+
 ### 🏝️ Adaptive Top-Bar Clearance & Fluid Elastic Physics
 - **Adaptive Top-Bar Clearance (Auto Detect):** Intelligently inspects the Hyprland layer-shell stack (`hyprctl -j layers`). If an Omarchy top bar, Waybar, or panel is active at $y=0$, the island automatically drops right below it (+3px gap). When no top bar exists, it stays flush against the monitor bezel (0px).
 - **Position Presets with State Persistence:** Choose between `Auto (Bar Detect)`, `Flush (0px)`, `Snug (2px)`, and `Float (6px)` right from the Sys tab, persisted automatically across reboots.
-- **Interactive Press & Elastic Hover:** Physical spring scale feedback (`pressScale: 0.95` on press, `1.02` on hover) with organic spring damping.
-- **Organic In-Place Spring Morphing:** Morphs smoothly between Resting Pill (34px) $\rightarrow$ Notification Peek Banner (42px) $\rightarrow$ Full Liquid Glass Card (480×480px).
-- **Physical Shake & Dip Physics:** Sinusoidal damped oscillation (`shakeX`) and vertical bounce (`bounceY`) that physically shakes the island when focus sessions complete or alerts fire.
-- **100% Click-Through Masking:** All desktop space outside the island is completely transparent and click-through.
+- **Press and Hover Feedback:** Eased scale and color transitions respond to pointer input.
+- **In-Place Morphing:** The island changes between a 34px pill, a 42px notification banner, and a 520px expanded card.
+- **Reduced Motion:** Transitions and alert motion follow Omarchy's reduced-motion setting.
+- **Input Masking:** The collapsed island captures input on the pill. The expanded card closes when you click outside it.
 
 ### 🤖 AI Agents Studio & Interactive Permission Interceptor
 - **Permission Request Interceptor:** Native Quickshell `SocketServer` listening at `$XDG_RUNTIME_DIR/dynamic-island/agents.sock` that intercepts tool `PermissionRequest` events from Claude Code, Codex CLI, and Google Antigravity, popping open an interactive banner with `[ ✓ Allow ]` and `[ ✗ Deny ]` buttons right on the island.
@@ -101,7 +111,7 @@ bind = $mainMod, I, exec, ~/.config/omarchy/plugins/harshith.dynamic-island/isla
 
 Available backend verbs:
 - `island-backend.sh toggle`: Toggle expanded command center
-- `island-backend.sh expand [music|focus|agents|stats|shelf|system]`: Open directly to tab
+- `island-backend.sh expand [home|music|timer|agents|stats|shelf|system]`: Open directly to a tab
 - `island-backend.sh collapse`: Close expanded card
 - `island-backend.sh peek <icon> <title> [subtitle] [target_tab]`: Trigger dynamic peek banner
 - `island-backend.sh empty-trash`: Clean trash instantly

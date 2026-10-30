@@ -17,7 +17,14 @@ Scope {
 
       screen: modelData
       anchors { top: true; left: true; right: true }
-      implicitHeight: core.item && core.item.isExpanded ? Style.space(560) : Style.space(90)
+      implicitHeight: core.item && core.item.isExpanded ? Style.space(600) : Style.space(90)
+      Behavior on implicitHeight {
+        NumberAnimation {
+          duration: Style.duration(core.item && core.item.isExpanded ? 240 : 160)
+          easing.type: Easing.Bezier
+          easing.bezierCurve: Style.easeOut
+        }
+      }
       color: "transparent"
       exclusionMode: ExclusionMode.Ignore
       WlrLayershell.namespace: "harshith-dynamic-island"
