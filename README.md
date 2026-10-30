@@ -18,7 +18,10 @@ The Home page shows live status cards. Select a card to open its control page.
 
 ### 🏠 Home Overview
 - See the current track, focus timer, available AI tools, battery, and audio status at a glance.
-- Select a card to open its control page.
+- Use the media buttons to skip or play tracks.
+- Start or pause a 25-minute focus timer from Home.
+- Toggle mute or Night Light from Home.
+- Select an arrow or AI button to open its control page.
 - Open the island to the Home page by default.
 
 
@@ -46,7 +49,7 @@ The Home page shows live status cards. Select a card to open its control page.
   - **Swap Memory:** Used / Total GB and percentage
   - **GPU VRAM & Temperature:** Real-time VRAM allocation and thermals (°C)
 - **⚡ Memory Optimizer:** 1-click button to flush page caches, drop caches, and sync memory to disk.
-- **📦 Arch & Omarchy Updates Monitor:** Background update checking via `checkupdates` with an interactive `[Update Now]` terminal launcher.
+- **📦 Arch & Omarchy Updates Monitor:** Read-only update checks via `checkupdates`. Review updates, then run the system updater yourself.
 
 ### 🔔 Apple-Grade Notification Peek Banners
 - **Live System Peeking:** The island springs open into an elegant notification banner for ~2.6s upon:
@@ -79,7 +82,7 @@ The Home page shows live status cards. Select a card to open its control page.
 
 ### 📋 Shelf, Trash Guard & Persistent Scratchpad
 - **Trash Guard Cleaner:** Live item counter for `~/.local/share/Trash` with a 1-click `[Empty]` button.
-- **Live Clipboard Preview:** Shows copied text snippet or full image thumbnail with 1-click "Copy Again" and "Clear" buttons.
+- **Live Clipboard Preview:** Shows a copied text snippet or image preview with "Copy Again" and "Clear" actions. Image previews use a private runtime directory and a 20 MiB size limit.
 - **Recent Screenshots Gallery:** Interactive thumbnail strip of the 4 latest screenshots with 1-click open.
 - **Auto-Saved Scratchpad:** Persistent multi-line notepad for draft prompts, code snippets, or thoughts that survives shell reboots.
 

@@ -57,24 +57,65 @@ get_brightness_info() {
   echo "$pct"
 }
 
+clipboard_image_directory() {
+  local runtime_dir="${XDG_RUNTIME_DIR:-}"
+  [[ -n "$runtime_dir" && -d "$runtime_dir" && -O "$runtime_dir" && ! -L "$runtime_dir" ]] || return 1
+
+  local image_dir="$runtime_dir/dynamic-island"
+  [[ ! -L "$image_dir" ]] || return 1
+  mkdir -p -- "$image_dir" || return 1
+  chmod 700 -- "$image_dir" || return 1
+  [[ -d "$image_dir" && -O "$image_dir" && ! -L "$image_dir" ]] || return 1
+  printf '%s\n' "$image_dir"
+}
+
+remove_clipboard_image() {
+  rm -f -- /tmp/dynamic-island-pro-clip.png 2>/dev/null || true
+  local image_dir="${XDG_RUNTIME_DIR:-}/dynamic-island"
+  if [[ -n "${XDG_RUNTIME_DIR:-}" && -d "$image_dir" && -O "$image_dir" && ! -L "$image_dir" ]]; then
+    rm -f -- "$image_dir/clipboard.png" 2>/dev/null || true
+  fi
+}
+
 get_clipboard_info() {
   local clip_type="empty"
   local clip_text=""
   local clip_img=""
+  local image_dir=""
+  image_dir=$(clipboard_image_directory 2>/dev/null || true)
+  rm -f -- /tmp/dynamic-island-pro-clip.png 2>/dev/null || true
 
   if command -v wl-paste >/dev/null 2>&1; then
     local types
     types=$(wl-paste --list-types 2>/dev/null || true)
     if [[ -n "$types" ]]; then
       if echo "$types" | grep -q '^image/'; then
-        clip_type="image"
-        clip_img="/tmp/dynamic-island-pro-clip.png"
-        wl-paste > "$clip_img" 2>/dev/null || clip_type="empty"
+        if [[ -n "$image_dir" ]]; then
+          local tmp_image image_bytes
+          tmp_image=$(mktemp "$image_dir/.clipboard.XXXXXX" 2>/dev/null || true)
+          if [[ -n "$tmp_image" ]] && wl-paste 2>/dev/null | head -c 20971521 > "$tmp_image"; then
+            image_bytes=$(wc -c < "$tmp_image")
+            if (( image_bytes <= 20971520 )); then
+              chmod 600 -- "$tmp_image"
+              mv -f -- "$tmp_image" "$image_dir/clipboard.png"
+              clip_type="image"
+              clip_img="$image_dir/clipboard.png"
+            else
+              rm -f -- "$tmp_image"
+            fi
+          elif [[ -n "$tmp_image" ]]; then
+            rm -f -- "$tmp_image"
+          fi
+        fi
       elif echo "$types" | grep -q '^text/'; then
         clip_type="text"
         clip_text=$(wl-paste -n 2>/dev/null | head -c 256 || true)
       fi
     fi
+  fi
+
+  if [[ "$clip_type" != "image" && -n "$image_dir" ]]; then
+    rm -f -- "$image_dir/clipboard.png" 2>/dev/null || true
   fi
 
   jq -n \
@@ -580,6 +621,7 @@ case "$cmd" in
     if command -v wl-copy >/dev/null 2>&1; then
       wl-copy --clear 2>/dev/null || true
     fi
+    remove_clipboard_image
     jq -n '{ type: "empty", text: "", image_path: "" }'
     ;;
   copy-text)

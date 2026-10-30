@@ -739,11 +739,6 @@ Item {
     refreshTelemetry()
   }
 
-  function updateSystem() {
-    Quickshell.execDetached(["foot", "-e", "bash", "-c", "omarchy update || yay -Syu; exec bash"])
-    root.isExpanded = false
-  }
-
   function checkUpdates() {
     Quickshell.execDetached(["bash", scriptPath, "check-updates"])
     triggerPeek("📦", "Checking Updates", "Refreshing package repositories...", "system", 1800)
@@ -1675,10 +1670,15 @@ Item {
           foreground: root.capsuleInk
           mutedForeground: Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.58)
           hasTrack: root.hasTrack
+          isPlaying: root.isPlaying
+          canPlayPause: root.currentPlayer ? root.currentPlayer.canTogglePlaying === true : false
+          canGoPrevious: root.currentPlayer ? root.currentPlayer.canGoPrevious === true : false
+          canGoNext: root.currentPlayer ? root.currentPlayer.canGoNext === true : false
           mediaTitle: root.mediaTitle
           mediaArtist: root.mediaArtist
           playerName: root.playerName
           timerActive: root.timerActive
+          timerRunning: root.timerRunning
           timerLeft: root.timerLeft
           timerName: root.timerName
           availableAgents: root.availableAgentCount()
@@ -1687,7 +1687,18 @@ Item {
           batteryStatus: root.batteryStatus
           systemVolume: root.systemVolume
           systemMuted: root.systemMuted
+          nightlightEnabled: root.nightlightEnabled
           onNavigate: function(page) { root.activeTab = page }
+          onActionRequested: function(action) {
+            if (action === "media-previous") root.mediaAction("previous")
+            else if (action === "media-toggle") root.mediaAction("play-pause")
+            else if (action === "media-next") root.mediaAction("next")
+            else if (action === "focus-toggle") {
+              if (root.timerActive) root.toggleTimer()
+              else root.startTimer(25, "Focus session", "focus")
+            } else if (action === "toggle-mute") root.toggleSystemMute()
+            else if (action === "toggle-nightlight") root.toggleNightlight()
+          }
         }
 
         // ================= TAB 1: MUSIC =================
@@ -2873,7 +2884,7 @@ Item {
               Text {
                 Layout.fillWidth: true
                 text: root.systemUpdatesCount > 0
-                  ? root.systemUpdatesCount + " System Update" + (root.systemUpdatesCount === 1 ? "" : "s") + " Available"
+                  ? root.systemUpdatesCount + " update" + (root.systemUpdatesCount === 1 ? "" : "s") + " available · review before install"
                   : "Arch & Omarchy Packages Up to Date"
                 font.family: Style.font.family
                 font.pixelSize: Style.space(10)
@@ -2881,18 +2892,6 @@ Item {
                 color: root.systemUpdatesCount > 0 ? "#fbbf24" : Qt.rgba(root.capsuleInk.r, root.capsuleInk.g, root.capsuleInk.b, 0.7)
               }
               Controls.Button {
-                visible: root.systemUpdatesCount > 0
-                text: "Update Now"
-                onClicked: root.updateSystem()
-                background: Rectangle {
-                  radius: Style.space(5)
-                  color: Qt.rgba(0.96, 0.62, 0.04, 0.25)
-                  border.color: "#f59e0b"
-                }
-                contentItem: Text { text: "Update Now"; font.pixelSize: Style.space(9); font.bold: true; color: "#fef08a" }
-              }
-              Controls.Button {
-                visible: root.systemUpdatesCount === 0
                 text: "Check"
                 onClicked: root.checkUpdates()
                 background: Rectangle { radius: Style.space(5); color: Qt.rgba(1, 1, 1, 0.08) }

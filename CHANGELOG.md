@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.1
+
+- Add one-tap media transport, focus timer, mute, and Night Light controls to Home.
+- Store clipboard image previews in a private runtime directory with owner-only file access.
+- Remove clipboard preview files when the clipboard changes or clears.
+- Limit clipboard image previews to 20 MiB.
+- Keep update checks read-only. Remove the one-click package update command.
+
 ## 3.0.0
 
 - Add a Home overview with live media, timer, AI tool, battery, and audio status cards.

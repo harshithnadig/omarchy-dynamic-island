@@ -33,3 +33,4 @@ jq -e '
 ' >/dev/null <<<"$output"
 
 echo "Dynamic Island Pro backend tests passed successfully"
+bash "$ROOT_DIR/tests/test_clipboard_privacy.sh"
